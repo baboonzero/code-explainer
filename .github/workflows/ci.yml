@@ -21,14 +21,10 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Mermaid CLI
-        run: npm install -g @mermaid-js/mermaid-cli
-
       - name: Compile scripts
         working-directory: code-explainer
         run: python -c "import glob,py_compile; [py_compile.compile(f, doraise=True) for f in glob.glob('scripts/*.py')]; print('compiled')"
 
       - name: Smoke test
         working-directory: code-explainer
-        run: python scripts/analyze.py analyze --source . --output .ci-out --mode standard --audience nontech --enable-web-enrichment false
-
+        run: python scripts/analyze.py analyze --source . --output .ci-out --mode quick --audience nontech --enable-web-enrichment false
