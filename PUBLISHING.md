@@ -16,14 +16,14 @@ git push -u origin main
 Use the Skills CLI install pattern:
 
 ```bash
-npx skills add https://github.com/<your-org-or-user>/code-explainer --skill code-explainer
+npx skills add https://github.com/baboonzero/code-explainer --skill code-explainer
 ```
 
 Or with Codex system installer script:
 
 ```bash
 python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo <your-org-or-user>/code-explainer \
+  --repo baboonzero/code-explainer \
   --path code-explainer
 ```
 

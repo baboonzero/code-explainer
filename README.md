@@ -146,6 +146,22 @@ python scripts/analyze.py analyze \
   --enable-web-enrichment true
 ```
 
+## Install From GitHub (For Other Developers)
+
+Using Skills CLI:
+
+```bash
+npx skills add https://github.com/baboonzero/code-explainer --skill code-explainer
+```
+
+Using Codex skill installer:
+
+```bash
+python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
+  --repo baboonzero/code-explainer \
+  --path code-explainer
+```
+
 ## Install Into Codex
 
 Use the installer script:
