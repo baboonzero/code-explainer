@@ -1,0 +1,27 @@
+# Flows Deep Explainer
+
+Generated: {{generated_at}}
+
+## Request Lifecycle (Conceptual)
+
+{{request_lifecycle}}
+
+## Flow and Sequence Diagrams
+
+- Request lifecycle: `../diagrams/svg/request_lifecycle_sequence.svg`
+- User flow: `../diagrams/svg/primary_user_flow.svg`
+- Module dependency: `../diagrams/svg/module_dependency_graph.svg`
+
+If mode is `deep`, additional assets are also available:
+
+- `critical_path_sequence.svg`
+- `trust_boundary_flow.svg`
+- `data_lineage_flow.svg`
+- `where_to_change_map.svg`
+
+## Practical Onboarding Path
+
+1. Start with one user flow.
+2. Trace the same path in entrypoint and service layers.
+3. Confirm dependency boundaries before proposing changes.
+

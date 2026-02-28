@@ -1,0 +1,4 @@
+version: 1
+display_name: Code Explainer
+short_description: Creates onboarding explainers and diagrams for local or GitHub codebases.
+default_prompt: Analyze this repository and generate onboarding explainers with deep links and Mermaid/SVG/PNG diagrams.

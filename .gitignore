@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Skill local outputs
+code-explainer/.out*/
+code-explainer/.out-gh/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
