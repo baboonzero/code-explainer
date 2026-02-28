@@ -191,6 +191,5 @@ Then restart Codex so it picks up the new skill.
 This project is licensed under the MIT License.
 
 - Full text: `LICENSE`
-- Copyright: `Copyright (c) 2026 Anshumani Ruddra`
 
 Created by Anshumani Ruddra
