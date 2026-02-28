@@ -19,6 +19,146 @@ def _write_diagram(diagrams_dir: Path, name: str, body: str) -> str:
     return path.name
 
 
+def _safe_label(text: str, max_len: int = 42) -> str:
+    cleaned = " ".join(text.replace("\\", "/").replace('"', "'").split())
+    if len(cleaned) <= max_len:
+        return cleaned
+    return cleaned[: max_len - 3].rstrip() + "..."
+
+
+def _node_id(prefix: str, idx: int) -> str:
+    return f"{prefix}{idx}"
+
+
+def _module_from_path(path: str) -> str:
+    if not path:
+        return "unknown"
+    norm = path.replace("\\", "/")
+    if "/" not in norm:
+        return "(root-files)"
+    return norm.split("/", 1)[0]
+
+
+def _build_request_lifecycle_sequence(flows: Dict[str, Any]) -> str:
+    steps = flows.get("request_lifecycle", [])
+    if len(steps) < 2:
+        steps = ["User Action", "Application Layer", "Response"]
+    participants = []
+    messages = []
+    for idx, step in enumerate(steps, start=1):
+        pid = _node_id("P", idx)
+        participants.append(f'    participant {pid} as "{_safe_label(step, 34)}"')
+    for idx in range(1, len(steps)):
+        src = _node_id("P", idx)
+        dst = _node_id("P", idx + 1)
+        messages.append(f"    {src}->>{dst}: {_safe_label(steps[idx - 1], 30)}")
+    return "sequenceDiagram\n" + "\n".join(participants + messages)
+
+
+def _build_primary_user_flow(flows: Dict[str, Any]) -> str:
+    primary = flows.get("primary_user_flow", {})
+    steps = primary.get("steps", [])
+    if len(steps) < 2:
+        steps = ["User intent", "Entrypoint", "Core module", "Result"]
+
+    lines = ["flowchart TD"]
+    for idx, step in enumerate(steps):
+        nid = _node_id("N", idx)
+        lines.append(f'    {nid}["{_safe_label(step)}"]')
+    for idx in range(len(steps) - 1):
+        lines.append(f"    N{idx} --> N{idx + 1}")
+    return "\n".join(lines)
+
+
+def _build_module_dependency_graph(deps: Dict[str, Any]) -> str:
+    lines = ["flowchart LR"]
+    edge_lines: List[str] = []
+    seen = set()
+    for edge in deps.get("internal_edges", [])[:120]:
+        src_path = edge.get("from", "")
+        dst_path = edge.get("to_resolved", "") or edge.get("to", "")
+        src_mod = common.safe_word(_module_from_path(src_path), fallback="module_src")
+        dst_mod = common.safe_word(_module_from_path(dst_path), fallback="module_dst")
+        key = f"{src_mod}->{dst_mod}"
+        if src_mod == dst_mod or key in seen:
+            continue
+        seen.add(key)
+        edge_lines.append(f"    {src_mod} --> {dst_mod}")
+        if len(edge_lines) >= 45:
+            break
+    if not edge_lines:
+        edge_lines = ["    module_a --> module_b", "    module_b --> module_c"]
+    lines.extend(edge_lines)
+    return "\n".join(lines)
+
+
+def _build_critical_path_sequence(flows: Dict[str, Any]) -> str:
+    critical_paths = flows.get("critical_paths", [])
+    steps: List[str] = []
+    if critical_paths:
+        steps = critical_paths[0].get("steps", [])
+    if len(steps) < 2:
+        steps = ["Entry", "Service", "Data", "Response"]
+
+    lines = ["sequenceDiagram"]
+    for idx, step in enumerate(steps, start=1):
+        lines.append(f'    participant C{idx} as "{_safe_label(step, 36)}"')
+    for idx in range(1, len(steps)):
+        lines.append(f"    C{idx}->>C{idx + 1}: {_safe_label(steps[idx - 1], 30)}")
+    return "\n".join(lines)
+
+
+def _build_trust_boundary_flow(flows: Dict[str, Any]) -> str:
+    boundaries = flows.get("trust_boundaries", [])
+    if not boundaries:
+        boundaries = [
+            {"name": "External user to application", "type": "network"},
+            {"name": "Application to data store", "type": "data"},
+        ]
+
+    lines = ["flowchart TB", '    user["External Actor"]', '    app["Application Boundary"]']
+    lines.append("    user --> app")
+    last_node = "app"
+    for idx, boundary in enumerate(boundaries, start=1):
+        nid = _node_id("T", idx)
+        label = _safe_label(f"{boundary.get('name', 'Boundary')} ({boundary.get('type', 'trust')})", 44)
+        lines.append(f'    {nid}["{label}"]')
+        lines.append(f"    {last_node} --> {nid}")
+        last_node = nid
+    return "\n".join(lines)
+
+
+def _build_data_lineage_flow(flows: Dict[str, Any]) -> str:
+    lineage = flows.get("data_lineage", [])
+    if len(lineage) < 2:
+        lineage = ["Input", "Validation", "Processing", "Storage", "Presentation"]
+
+    lines = ["flowchart LR"]
+    for idx, step in enumerate(lineage):
+        nid = _node_id("D", idx)
+        lines.append(f'    {nid}["{_safe_label(step, 38)}"]')
+    for idx in range(len(lineage) - 1):
+        lines.append(f"    D{idx} --> D{idx + 1}")
+    return "\n".join(lines)
+
+
+def _build_where_to_change_map(modules: List[Dict[str, Any]], flows: Dict[str, Any]) -> str:
+    lines = ["flowchart TD", '    req["Feature Request"]']
+    module_names = [m.get("name", "module") for m in modules if m.get("name") != "(root-files)"][:6]
+    if not module_names:
+        module_names = ["entrypoints", "services", "data"]
+    for idx, name in enumerate(module_names, start=1):
+        nid = _node_id("M", idx)
+        lines.append(f'    {nid}["{_safe_label(name)}"]')
+        lines.append(f"    req --> {nid}")
+        lines.append(f"    {nid} --> tests")
+    if flows.get("primary_user_flow", {}).get("steps"):
+        lines.append('    tests["Test Coverage"]')
+    else:
+        lines.append('    tests["Validation Checklist"]')
+    return "\n".join(lines)
+
+
 def build_diagrams(
     stack: Dict[str, Any],
     modules: List[Dict[str, Any]],
@@ -50,13 +190,13 @@ C4Context
         )
     )
 
-    module_labels = [m["name"] for m in modules[:5]] or ["core"]
+    module_labels = [m["name"] for m in modules if m["name"] != "(root-files)"][:5] or ["core"]
     container_nodes = "\n".join(
-        [f'    Container(c{i}, "{name}", "{primary_language}", "Core module")' for i, name in enumerate(module_labels, start=1)]
+        [f'    Container(c{i}, "{_safe_label(name, 28)}", "{primary_language}", "Core module")' for i, name in enumerate(module_labels, start=1)]
     )
     rel_lines = []
     for i in range(1, len(module_labels)):
-        rel_lines.append(f'  Rel(c{i}, c{i+1}, "calls/depends on")')
+        rel_lines.append(f'  Rel(c{i}, c{i + 1}, "calls/depends on")')
     files.append(
         _write_diagram(
             diagrams_dir,
@@ -74,120 +214,15 @@ C4Container
         )
     )
 
-    lifecycle_steps = flows.get("request_lifecycle", [])
-    participants = "\n".join([f"    participant S{i} as {step.replace(' ', '_')}" for i, step in enumerate(lifecycle_steps, start=1)])
-    messages = []
-    for i in range(1, len(lifecycle_steps)):
-        messages.append(f"    S{i}->>S{i+1}: {lifecycle_steps[i-1]} to {lifecycle_steps[i]}")
-    files.append(
-        _write_diagram(
-            diagrams_dir,
-            "request_lifecycle_sequence",
-            f"""
-sequenceDiagram
-{participants}
-{chr(10).join(messages)}
-""",
-        )
-    )
-
-    files.append(
-        _write_diagram(
-            diagrams_dir,
-            "primary_user_flow",
-            """
-flowchart TD
-    A[User Goal] --> B{Need Context?}
-    B -->|Yes| C[Open OVERVIEW.md]
-    C --> D[Review architecture diagram]
-    D --> E[Jump to deep explainer]
-    B -->|No| F[Go to task-specific section]
-    E --> G[Understand modules and flows]
-    F --> G
-""",
-        )
-    )
-
-    edge_lines = deps.get("internal_edges", [])[:25]
-    graph_lines = []
-    for edge in edge_lines:
-        src = common.safe_word(edge.get("from", "src"))
-        dst = common.safe_word(edge.get("to", "dst"))
-        graph_lines.append(f"    {src} --> {dst}")
-    if not graph_lines:
-        graph_lines = ["    module_a --> module_b", "    module_b --> module_c"]
-    files.append(
-        _write_diagram(
-            diagrams_dir,
-            "module_dependency_graph",
-            "flowchart LR\n" + "\n".join(graph_lines),
-        )
-    )
+    files.append(_write_diagram(diagrams_dir, "request_lifecycle_sequence", _build_request_lifecycle_sequence(flows)))
+    files.append(_write_diagram(diagrams_dir, "primary_user_flow", _build_primary_user_flow(flows)))
+    files.append(_write_diagram(diagrams_dir, "module_dependency_graph", _build_module_dependency_graph(deps)))
 
     if mode == "deep":
-        files.append(
-            _write_diagram(
-                diagrams_dir,
-                "critical_path_sequence",
-                """
-sequenceDiagram
-    participant User
-    participant Entry
-    participant Service
-    participant Data
-    User->>Entry: Trigger critical workflow
-    Entry->>Service: Validate and orchestrate
-    Service->>Data: Persist and read state
-    Data-->>Service: Return result
-    Service-->>Entry: Compose response
-    Entry-->>User: Return outcome
-""",
-            )
-        )
-        files.append(
-            _write_diagram(
-                diagrams_dir,
-                "trust_boundary_flow",
-                """
-flowchart TB
-    ext[External User] --> api[Public Interface]
-    api --> app[Application Boundary]
-    app --> db[(Data Store Boundary)]
-    app --> third[Third-Party API Boundary]
-""",
-            )
-        )
-        files.append(
-            _write_diagram(
-                diagrams_dir,
-                "data_lineage_flow",
-                """
-flowchart LR
-    ingest[Input Data] --> validate[Validation]
-    validate --> transform[Transformation]
-    transform --> store[(Storage)]
-    store --> aggregate[Aggregation]
-    aggregate --> expose[Presentation]
-""",
-            )
-        )
-        files.append(
-            _write_diagram(
-                diagrams_dir,
-                "where_to_change_map",
-                """
-flowchart TD
-    req[Feature Request] --> ux[UI Layer]
-    req --> api[API Layer]
-    req --> domain[Domain Logic]
-    req --> data[Data Model]
-    ux --> tests[Test Updates]
-    api --> tests
-    domain --> tests
-    data --> tests
-""",
-            )
-        )
+        files.append(_write_diagram(diagrams_dir, "critical_path_sequence", _build_critical_path_sequence(flows)))
+        files.append(_write_diagram(diagrams_dir, "trust_boundary_flow", _build_trust_boundary_flow(flows)))
+        files.append(_write_diagram(diagrams_dir, "data_lineage_flow", _build_data_lineage_flow(flows)))
+        files.append(_write_diagram(diagrams_dir, "where_to_change_map", _build_where_to_change_map(modules, flows)))
 
     payload = {
         "generated_at": common.now_iso(),
@@ -227,4 +262,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

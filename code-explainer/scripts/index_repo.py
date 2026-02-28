@@ -35,8 +35,17 @@ def _extract_symbol_candidates(path: Path) -> List[Dict[str, Any]]:
     return symbols[:200]
 
 
-def build_index(repo_root: Path, out_dir: Path) -> Dict[str, Any]:
-    files = common.list_files(repo_root)
+def build_index(
+    repo_root: Path,
+    out_dir: Path,
+    include_globs: List[str] | None = None,
+    exclude_globs: List[str] | None = None,
+) -> Dict[str, Any]:
+    files = common.list_files(
+        repo_root,
+        include_globs=include_globs or [],
+        exclude_globs=exclude_globs or [],
+    )
     languages = common.language_counts(files)
     modules = common.top_level_modules(files)
     symbols: List[Dict[str, Any]] = []
@@ -65,6 +74,8 @@ def build_index(repo_root: Path, out_dir: Path) -> Dict[str, Any]:
     payload = {
         "indexed_at": common.now_iso(),
         "repo_root": repo_root.as_posix(),
+        "include_globs": include_globs or [],
+        "exclude_globs": exclude_globs or [],
         "file_count": len(files),
         "files": files,
         "language_counts": languages,
@@ -79,16 +90,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build file/module/symbol index for a repository.")
     parser.add_argument("--repo", required=True, help="Repository root path")
     parser.add_argument("--output", required=True, help="Output meta directory")
+    parser.add_argument("--include-glob", action="append", default=[])
+    parser.add_argument("--exclude-glob", action="append", default=[])
     args = parser.parse_args()
 
     repo_root = Path(args.repo).resolve()
     out_dir = Path(args.output).resolve()
     common.ensure_dir(out_dir)
-    payload = build_index(repo_root, out_dir)
+    payload = build_index(
+        repo_root,
+        out_dir,
+        include_globs=args.include_glob,
+        exclude_globs=args.exclude_glob,
+    )
     print(f"Indexed {payload['file_count']} files into {out_dir / 'index.json'}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

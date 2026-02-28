@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+from fnmatch import fnmatch
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -29,7 +30,20 @@ IGNORE_DIRS = {
     "coverage",
     "target",
     ".pui",
+    "output",
+    "artifacts",
 }
+
+DEFAULT_EXCLUDE_GLOBS = [
+    ".out*/**",
+    ".ci-*/**",
+    "output/**",
+    "artifacts/**",
+    "reports/**",
+    "tmp/**",
+    "temp/**",
+    "**/__pycache__/**",
+]
 
 
 LANG_EXTENSIONS = {
@@ -110,7 +124,28 @@ def github_repo_slug(url: str) -> str:
     return cleaned.replace("https://github.com/", "").replace("http://github.com/", "")
 
 
-def list_files(root: Path, limit: int = 30000) -> List[Dict[str, Any]]:
+def _matches_any_glob(path: str, patterns: Iterable[str]) -> bool:
+    normalized = path.replace("\\", "/")
+    for pattern in patterns:
+        p = pattern.strip()
+        if not p:
+            continue
+        if fnmatch(normalized, p):
+            return True
+        # Also support directory-only globs like "docs/".
+        if p.endswith("/") and normalized.startswith(p):
+            return True
+    return False
+
+
+def list_files(
+    root: Path,
+    limit: int = 30000,
+    include_globs: Optional[List[str]] = None,
+    exclude_globs: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    include_globs = include_globs or []
+    exclude_globs = (exclude_globs or []) + DEFAULT_EXCLUDE_GLOBS
     files: List[Dict[str, Any]] = []
     for current_root, dirs, names in os.walk(root):
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS and not d.startswith(".venv")]
@@ -118,6 +153,10 @@ def list_files(root: Path, limit: int = 30000) -> List[Dict[str, Any]]:
             full_path = Path(current_root) / name
             rel = full_path.relative_to(root).as_posix()
             if rel.startswith("."):
+                continue
+            if _matches_any_glob(rel, exclude_globs):
+                continue
+            if include_globs and not _matches_any_glob(rel, include_globs):
                 continue
             try:
                 size = full_path.stat().st_size
@@ -147,16 +186,28 @@ def language_counts(files: Iterable[Dict[str, Any]]) -> Dict[str, int]:
 
 def top_level_modules(files: Iterable[Dict[str, Any]], max_items: int = 60) -> List[Dict[str, Any]]:
     buckets: Dict[str, Dict[str, Any]] = {}
+    root_files = {"name": "(root-files)", "type": "file_group", "file_count": 0, "total_bytes": 0, "examples": []}
     for item in files:
         path = item["path"]
+        size = int(item.get("size_bytes", 0))
+        if "/" not in path:
+            root_files["file_count"] += 1
+            root_files["total_bytes"] += size
+            if len(root_files["examples"]) < 10:
+                root_files["examples"].append(path)
+            continue
+
         top = path.split("/", 1)[0]
         if top not in buckets:
-            buckets[top] = {"name": top, "file_count": 0, "total_bytes": 0}
+            buckets[top] = {"name": top, "type": "directory", "file_count": 0, "total_bytes": 0}
         buckets[top]["file_count"] += 1
-        buckets[top]["total_bytes"] += int(item.get("size_bytes", 0))
+        buckets[top]["total_bytes"] += size
+
     ranked = sorted(
         buckets.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True
     )
+    if root_files["file_count"] > 0:
+        ranked.append(root_files)
     return ranked[:max_items]
 
 
@@ -214,7 +265,42 @@ def detect_architecture_pattern(repo_root: Path) -> str:
     return "Custom/Undetected"
 
 
-def detect_entrypoints(files: Iterable[Dict[str, Any]]) -> List[Dict[str, str]]:
+def _looks_like_python_entrypoint(path: str, text: str) -> Optional[str]:
+    lowered = text.lower()
+    if "__name__" in text and "__main__" in text:
+        return "Python main guard"
+    if re.search(r"^\s*(app|application)\s*=\s*FastAPI\(", text, flags=re.MULTILINE):
+        return "FastAPI app bootstrap"
+    if re.search(r"^\s*if\s+__name__\s*==\s*[\"']__main__[\"']\s*:", text, flags=re.MULTILINE):
+        return "Python script entrypoint"
+    if path.endswith("manage.py"):
+        return "Django management entrypoint"
+    return None
+
+
+def _looks_like_js_entrypoint(path: str, text: str) -> Optional[str]:
+    if "app.listen(" in text or ".listen(" in text:
+        return "Server listener bootstrap"
+    if "createRoot(" in text or "ReactDOM.render(" in text:
+        return "Frontend app bootstrap"
+    if "NestFactory.create" in text:
+        return "NestJS bootstrap"
+    if path.endswith(("next.config.js", "next.config.ts")):
+        return "Next.js config entrypoint"
+    return None
+
+
+def _looks_like_go_entrypoint(path: str, text: str) -> Optional[str]:
+    if path.endswith("main.go") and "func main()" in text:
+        return "Go main package"
+    return None
+
+
+def detect_entrypoints(
+    files: Iterable[Dict[str, Any]],
+    repo_root: Optional[Path] = None,
+    max_scan: int = 2500,
+) -> List[Dict[str, str]]:
     patterns = {
         "main.py": "Python entrypoint",
         "app.py": "Python app bootstrap",
@@ -229,10 +315,38 @@ def detect_entrypoints(files: Iterable[Dict[str, Any]]) -> List[Dict[str, str]]:
         "next.config.js": "Next.js config",
     }
     results: List[Dict[str, str]] = []
+    scan_count = 0
+    seen_paths = set()
     for item in files:
         filename = item["path"].split("/")[-1].lower()
         if filename in patterns:
             results.append({"path": item["path"], "kind": patterns[filename]})
+            seen_paths.add(item["path"])
+
+        if repo_root is None:
+            continue
+        if scan_count >= max_scan:
+            continue
+        ext = item.get("ext", "")
+        if ext not in {".py", ".js", ".jsx", ".ts", ".tsx", ".go"}:
+            continue
+        text = read_text(repo_root / item["path"])
+        if not text:
+            continue
+        kind = None
+        if ext == ".py":
+            kind = _looks_like_python_entrypoint(item["path"], text)
+        elif ext in {".js", ".jsx", ".ts", ".tsx"}:
+            kind = _looks_like_js_entrypoint(item["path"], text)
+        elif ext == ".go":
+            kind = _looks_like_go_entrypoint(item["path"], text)
+        if kind and item["path"] not in seen_paths:
+            results.append({"path": item["path"], "kind": kind})
+            seen_paths.add(item["path"])
+        scan_count += 1
+
+    # Keep deterministic ordering.
+    results.sort(key=lambda x: x["path"])
     return results
 
 
@@ -388,4 +502,3 @@ def file_line_count(path: Path) -> int:
     if not text:
         return 0
     return len(text.splitlines())
-

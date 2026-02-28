@@ -9,6 +9,7 @@ Outputs include:
 - Mermaid source diagrams (`.mmd`)
 - Rendered SVG and PNG diagrams
 - Confidence, attribution, and quality reports (`meta/*.json`)
+- Documentation coverage report (`meta/coverage_report.json`)
 
 ## Repository Layout
 
@@ -143,8 +144,14 @@ python scripts/analyze.py analyze \
   --output <output_dir> \
   --mode standard \
   --audience nontech \
+  --overview-length medium \
   --enable-web-enrichment true
 ```
+
+Useful optional controls:
+
+- `--include-glob "<pattern>"` (repeatable) to scope analysis to specific paths
+- `--exclude-glob "<pattern>"` (repeatable) to remove generated/irrelevant files
 
 ## Install From GitHub (For Other Developers)
 

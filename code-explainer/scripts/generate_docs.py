@@ -14,30 +14,33 @@ if str(SCRIPT_DIR) not in sys.path:
 import common
 
 
-def _list_to_bullets(items: List[str], fallback: str = "- Not available") -> str:
+def _list_to_bullets(items: List[str], fallback: str = "- Not available", limit: int | None = None) -> str:
     if not items:
         return fallback
-    return "\n".join([f"- {item}" for item in items])
+    scoped = items if limit is None else items[:limit]
+    return "\n".join([f"- {item}" for item in scoped])
 
 
 def _module_table(modules: List[Dict[str, Any]], limit: int = 20) -> str:
-    lines = ["| Module | File Count | Total Size (KB) |", "|---|---:|---:|"]
+    lines = ["| Module | Type | File Count | Total Size (KB) |", "|---|---|---:|---:|"]
     for module in modules[:limit]:
         kb = round(module.get("total_bytes", 0) / 1024.0, 1)
-        lines.append(f"| `{module['name']}` | {module['file_count']} | {kb} |")
+        lines.append(
+            f"| `{module['name']}` | {module.get('type', 'unknown')} | {module['file_count']} | {kb} |"
+        )
     return "\n".join(lines)
 
 
-def _entry_table(entries: List[Dict[str, str]]) -> str:
+def _entry_table(entries: List[Dict[str, str]], limit: int = 25) -> str:
     if not entries:
-        return "_No clear entrypoints detected._"
+        return "_No clear entrypoints detected. See confidence and quality reports for caveats._"
     lines = ["| Path | Kind |", "|---|---|"]
-    for entry in entries[:25]:
+    for entry in entries[:limit]:
         lines.append(f"| `{entry['path']}` | {entry['kind']} |")
     return "\n".join(lines)
 
 
-def _dep_section(dep_payload: Dict[str, Any]) -> str:
+def _dep_section(dep_payload: Dict[str, Any], max_per_manifest: int = 80) -> str:
     external = dep_payload.get("external_dependencies", {})
     if not external:
         return "_No dependency manifests detected._"
@@ -45,7 +48,7 @@ def _dep_section(dep_payload: Dict[str, Any]) -> str:
     for manifest, deps in external.items():
         chunks.append(f"### `{manifest}`")
         if deps:
-            chunks.append(_list_to_bullets([f"`{d}`" for d in deps[:80]]))
+            chunks.append(_list_to_bullets([f"`{d}`" for d in deps[:max_per_manifest]]))
         else:
             chunks.append("- No dependencies parsed")
         chunks.append("")
@@ -61,12 +64,15 @@ def _diagram_links(diagram_manifest: Dict[str, Any]) -> str:
     return "\n".join(links) if links else "- No diagrams generated."
 
 
-def _where_to_modify(modules: List[Dict[str, Any]]) -> str:
+def _where_to_modify(modules: List[Dict[str, Any]], limit: int) -> str:
     if not modules:
-        return "- Check entrypoint files and service modules."
+        return "- Start from detected entrypoint files, then trace dependencies in `module_dependency_graph.svg`."
     suggestions = []
-    for module in modules[:6]:
+    for module in modules[:limit]:
         name = module["name"]
+        if name == "(root-files)":
+            suggestions.append("- For startup/config changes, inspect top-level files listed in `(root-files)`.")
+            continue
         suggestions.append(f"- For changes in **{name}**, start with `{name}/` and trace callers from entrypoints.")
     return "\n".join(suggestions)
 
@@ -75,6 +81,7 @@ def _glossary_terms(
     stack_payload: Dict[str, Any],
     dep_payload: Dict[str, Any],
     module_payload: List[Dict[str, Any]],
+    doc_payload: Dict[str, Any],
 ) -> List[Dict[str, str]]:
     terms: List[Dict[str, str]] = []
     frameworks = stack_payload.get("frameworks", [])
@@ -88,17 +95,192 @@ def _glossary_terms(
         if deps:
             terms.append({"term": manifest, "definition": f"Dependency manifest containing {len(deps)} package entries."})
 
-    for module in module_payload[:6]:
+    for module in module_payload[:8]:
         terms.append(
             {
                 "term": module["name"],
-                "definition": f"Top-level module with {module['file_count']} files in this codebase.",
+                "definition": f"Module/group with {module['file_count']} files in this codebase.",
             }
         )
+
+    for doc in doc_payload.get("parsed_docs", [])[:8]:
+        terms.append(
+            {
+                "term": Path(doc["path"]).name,
+                "definition": f"Repository document used during analysis: {doc.get('title', '')}.",
+            }
+        )
+
     dedup = {}
     for item in terms:
         dedup[item["term"]] = item
-    return list(dedup.values())[:40]
+    return list(dedup.values())[:50]
+
+
+def _length_profile(overview_length: str) -> Dict[str, int]:
+    if overview_length == "short":
+        return {
+            "module_limit": 10,
+            "entry_limit": 10,
+            "doc_link_limit": 4,
+            "where_to_modify_limit": 4,
+            "critical_path_limit": 3,
+        }
+    if overview_length == "long":
+        return {
+            "module_limit": 35,
+            "entry_limit": 40,
+            "doc_link_limit": 12,
+            "where_to_modify_limit": 10,
+            "critical_path_limit": 10,
+        }
+    return {
+        "module_limit": 20,
+        "entry_limit": 25,
+        "doc_link_limit": 8,
+        "where_to_modify_limit": 6,
+        "critical_path_limit": 6,
+    }
+
+
+def _audience_note(audience: str) -> str:
+    if audience == "engineering":
+        return "This output prioritizes technical precision and traceability from entrypoints to dependencies."
+    if audience == "mixed":
+        return "This output balances plain-language onboarding with technical traceability for implementation handoff."
+    return "This output prioritizes plain language and practical orientation before code-level detail."
+
+
+def _mode_note(mode: str) -> str:
+    if mode == "quick":
+        return "Quick mode: bounded depth, concise explanations, and fewer critical paths."
+    if mode == "deep":
+        return "Deep mode: expanded flow tracing, richer diagrams, and stronger evidence notes."
+    return "Standard mode: balanced depth for onboarding with reliable architecture and flow coverage."
+
+
+def _overview_length_note(overview_length: str) -> str:
+    if overview_length == "short":
+        return "Overview length: short (executive skim)."
+    if overview_length == "long":
+        return "Overview length: long (extended onboarding context)."
+    return "Overview length: medium (default readability)."
+
+
+def _docs_summary(doc_payload: Dict[str, Any], limit: int) -> str:
+    parsed = doc_payload.get("parsed_docs", [])
+    if not parsed:
+        return "- No repository docs were parsed; this overview is code-first."
+    rows = []
+    for doc in parsed[:limit]:
+        title = doc.get("title", Path(doc["path"]).name)
+        rows.append(f"- [`{doc['path']}`](../{doc['path']}) - {title}")
+    return "\n".join(rows)
+
+
+def _pick_summary_doc(parsed_docs: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+    if not parsed_docs:
+        return None
+    ranked = []
+    for doc in parsed_docs:
+        path = doc.get("path", "").lower()
+        score = 0
+        if "readme" in path:
+            score += 100
+        if "overview" in path or "getting-started" in path:
+            score += 60
+        if "setup" in path or "architecture" in path:
+            score += 40
+        if path.startswith("docs/"):
+            score += 20
+        if path.startswith("references/"):
+            score -= 15
+        ranked.append((score, doc))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    top_score, top_doc = ranked[0]
+    if top_score < 20:
+        return None
+    return top_doc
+
+
+def _docs_coverage_line(doc_payload: Dict[str, Any]) -> str:
+    discovered = int(doc_payload.get("discovered_count", 0))
+    parsed = int(doc_payload.get("parsed_count", 0))
+    skipped = int(doc_payload.get("skipped_count", 0))
+    if discovered == 0:
+        return "No documentation files were discovered in this repository."
+    return f"Docs coverage: parsed **{parsed}/{discovered}** docs (skipped: {skipped})."
+
+
+def _plain_system_summary(
+    repo_name: str,
+    stack_payload: Dict[str, Any],
+    doc_payload: Dict[str, Any],
+    audience: str,
+) -> str:
+    parsed_docs = doc_payload.get("parsed_docs", [])
+    summary_doc = _pick_summary_doc(parsed_docs)
+    if summary_doc:
+        seed = summary_doc.get("summary", "").strip()
+        if seed:
+            if audience == "engineering":
+                return (
+                    f"{seed}\n\nFrom code signals, {repo_name} appears to follow "
+                    f"{stack_payload.get('architecture_pattern', 'a custom')} architecture."
+                )
+            if audience == "mixed":
+                return (
+                    f"{seed}\n\nThe codebase is organized using "
+                    f"{stack_payload.get('architecture_pattern', 'a custom')} architecture, "
+                    "with clear module boundaries for onboarding."
+                )
+            return (
+                f"{seed}\n\nIn plain terms: this repository contains the product logic and supporting services "
+                "that power user-facing behavior."
+            )
+
+    frameworks = ", ".join(stack_payload.get("frameworks", [])[:4]) or "core platform libraries"
+    if audience == "engineering":
+        return (
+            f"{repo_name} is a {stack_payload.get('architecture_pattern', 'custom')} system "
+            f"built on {frameworks}. This summary is inferred from repository structure and dependency signals."
+        )
+    if audience == "mixed":
+        return (
+            f"{repo_name} appears to be organized as a {stack_payload.get('architecture_pattern', 'custom')} system "
+            f"built on {frameworks}."
+        )
+    return (
+        f"{repo_name} is the core product codebase. It is built with {frameworks} and organized so teams can "
+        "ship features across shared modules."
+    )
+
+
+def _critical_path_lines(flow_payload: Dict[str, Any], limit: int) -> str:
+    lines: List[str] = []
+    for path in flow_payload.get("critical_paths", [])[:limit]:
+        steps = " -> ".join(path.get("steps", []))
+        lines.append(f"- **{path.get('name', 'Critical Path')}**: {steps}")
+    return "\n".join(lines) if lines else "- No critical path extracted from dependency graph."
+
+
+def _primary_flow_summary(flow_payload: Dict[str, Any]) -> str:
+    flow = flow_payload.get("primary_user_flow", {})
+    steps = flow.get("steps", [])
+    if not steps:
+        return "Primary user flow could not be confidently extracted from code; see quality report warnings."
+    return " -> ".join(steps)
+
+
+def _external_context_summary(enrichment_payload: Dict[str, Any]) -> str:
+    records = enrichment_payload.get("records", [])
+    if not records:
+        return "No external enrichment records."
+    available = [r for r in records if r.get("available") or r.get("status") == 200]
+    if not available:
+        return "External enrichment attempted but no usable external records were returned."
+    labels = ", ".join(sorted({r.get("source", "unknown") for r in available}))
+    return f"External enrichment sources used: {labels}."
 
 
 def generate_docs(
@@ -107,16 +289,20 @@ def generate_docs(
     source: str,
     mode: str,
     audience: str,
+    overview_length: str,
     index_payload: Dict[str, Any],
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
     dep_payload: Dict[str, Any],
     flow_payload: Dict[str, Any],
     diagram_manifest: Dict[str, Any],
+    docs_payload: Dict[str, Any],
     enrichment_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     overview_dir = common.ensure_dir(output_root / "overview")
     deep_dir = common.ensure_dir(output_root / "deep")
+
+    profile = _length_profile(overview_length)
 
     modules = index_payload.get("modules", [])
     entrypoints = entry_payload.get("entrypoints", [])
@@ -133,18 +319,27 @@ def generate_docs(
         "source": source,
         "mode": mode,
         "audience": audience,
+        "overview_length": overview_length,
         "generated_at": common.now_iso(),
         "architecture_pattern": stack_payload.get("architecture_pattern", "Unknown"),
         "top_languages": top_languages,
         "top_frameworks": top_frameworks,
         "building_blocks": _list_to_bullets(key_building_blocks, "- No major blocks detected"),
-        "entrypoints_table": _entry_table(entrypoints),
-        "module_table": _module_table(modules),
+        "entrypoints_table": _entry_table(entrypoints, limit=profile["entry_limit"]),
+        "module_table": _module_table(modules, limit=profile["module_limit"]),
         "dependency_section": _dep_section(dep_payload),
         "diagram_links": _diagram_links(diagram_manifest),
-        "where_to_modify": _where_to_modify(modules),
+        "where_to_modify": _where_to_modify(modules, limit=profile["where_to_modify_limit"]),
         "request_lifecycle": _list_to_bullets(flow_payload.get("request_lifecycle", [])),
-        "critical_paths": _list_to_bullets([p["name"] for p in flow_payload.get("critical_paths", [])]),
+        "critical_paths": _critical_path_lines(flow_payload, profile["critical_path_limit"]),
+        "audience_note": _audience_note(audience),
+        "mode_note": _mode_note(mode),
+        "overview_length_note": _overview_length_note(overview_length),
+        "plain_summary": _plain_system_summary(repo_name, stack_payload, docs_payload, audience),
+        "docs_coverage": _docs_coverage_line(docs_payload),
+        "docs_quick_links": _docs_summary(docs_payload, profile["doc_link_limit"]),
+        "primary_user_flow_summary": _primary_flow_summary(flow_payload),
+        "external_context_summary": _external_context_summary(enrichment_payload),
     }
 
     overview_template = common.load_template(templates_root / "overview.md.j2")
@@ -158,11 +353,10 @@ def generate_docs(
     modules_text = common.render_template(modules_template, replacements_common)
     flows_text = common.render_template(flows_template, replacements_common)
 
-    glossary_terms = _glossary_terms(stack_payload, dep_payload, modules)
+    glossary_terms = _glossary_terms(stack_payload, dep_payload, modules, docs_payload)
     glossary_lines = "\n".join([f"- **{item['term']}**: {item['definition']}" for item in glossary_terms])
     glossary_text = common.render_template(glossary_template, {**replacements_common, "glossary_entries": glossary_lines})
 
-    # Dependencies deep doc is generated directly to keep contract explicit.
     dependencies_deep = f"""# Dependencies Deep Explainer
 
 Generated at: {common.now_iso()}
@@ -194,7 +388,7 @@ Generated at: {common.now_iso()}
         common.collect_claim(
             "claim_primary_language",
             f"Primary language appears to be {stack_payload.get('primary_language', 'Unknown')}.",
-            [f"meta/index.json", "meta/stack.json"],
+            ["meta/index.json", "meta/stack.json"],
             0.88,
             "Derived from file extension distribution",
         ),
@@ -203,14 +397,21 @@ Generated at: {common.now_iso()}
             f"Detected architecture pattern is {stack_payload.get('architecture_pattern', 'Unknown')}.",
             ["meta/stack.json"],
             0.72,
-            "Heuristic directory pattern matching",
+            "Heuristic directory and dependency pattern matching",
         ),
         common.collect_claim(
             "claim_entrypoints",
             f"Detected {len(entrypoints)} likely entrypoint files.",
             ["meta/entrypoints.json"],
-            0.80,
-            "Filename and conventional file pattern matching",
+            0.82,
+            "Filename and source-content bootstrap heuristics",
+        ),
+        common.collect_claim(
+            "claim_doc_coverage",
+            f"Parsed {docs_payload.get('parsed_count', 0)} of {docs_payload.get('discovered_count', 0)} documentation files.",
+            ["meta/coverage_report.json"],
+            0.9,
+            "Deterministic documentation ingestion pass",
         ),
         common.collect_claim(
             "claim_diagram_set",
@@ -242,6 +443,9 @@ Generated at: {common.now_iso()}
             "deep/DEPENDENCIES_DEEP.md",
             "deep/GLOSSARY.md",
         ],
+        "audience": audience,
+        "mode": mode,
+        "overview_length": overview_length,
         "claims": claims,
     }
     common.write_json(output_root / "meta" / "docs_generation.json", payload)
@@ -255,12 +459,14 @@ def main() -> int:
     parser.add_argument("--templates-root", required=True)
     parser.add_argument("--mode", default="standard")
     parser.add_argument("--audience", default="nontech")
+    parser.add_argument("--overview-length", default="medium", choices=["short", "medium", "long"])
     parser.add_argument("--index", required=True)
     parser.add_argument("--stack", required=True)
     parser.add_argument("--entrypoints", required=True)
     parser.add_argument("--dependencies", required=True)
     parser.add_argument("--flows", required=True)
     parser.add_argument("--diagram-manifest", required=True)
+    parser.add_argument("--coverage", required=True)
     parser.add_argument("--enrichment", required=True)
     args = parser.parse_args()
 
@@ -270,12 +476,14 @@ def main() -> int:
         source=args.source,
         mode=common.normalize_mode(args.mode),
         audience=args.audience,
+        overview_length=args.overview_length,
         index_payload=common.read_json(Path(args.index), default={}),
         stack_payload=common.read_json(Path(args.stack), default={}),
         entry_payload=common.read_json(Path(args.entrypoints), default={}),
         dep_payload=common.read_json(Path(args.dependencies), default={}),
         flow_payload=common.read_json(Path(args.flows), default={}),
         diagram_manifest=common.read_json(Path(args.diagram_manifest), default={}),
+        docs_payload=common.read_json(Path(args.coverage), default={}),
         enrichment_payload=common.read_json(Path(args.enrichment), default={}),
     )
     print(json.dumps({"overview": payload["overview_file"], "deep_count": len(payload["deep_files"])}, indent=2))
@@ -284,4 +492,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -7,6 +7,7 @@ Goal: Fast orientation with lightweight outputs.
 - Reduced dependency/flow depth.
 - Core docs still generated.
 - Fewer inferred critical paths.
+- Lower documentation ingestion cap.
 
 ## Standard (Default)
 
@@ -15,6 +16,7 @@ Goal: Balanced fidelity and runtime for most repositories.
 - Full required two-tier docs.
 - Mandatory standard diagram set.
 - Context + container + request + dependency views.
+- Balanced doc ingestion and semantic quality checks.
 
 ## Deep
 
@@ -23,4 +25,16 @@ Goal: Maximum fidelity and audit-ready onboarding.
 - Adds advanced diagrams and richer flow analysis.
 - Includes trust boundary and data lineage outputs.
 - Better suited for large or complex repos.
+- Higher doc ingestion cap and longer extracted flow traces.
 
+## Audience Behavior
+
+- `nontech`: plain-language phrasing first, minimal jargon.
+- `mixed`: business-and-technical balance.
+- `engineering`: technical detail and traceability emphasis.
+
+## Overview Length
+
+- `short`: executive skim.
+- `medium`: balanced default.
+- `long`: expanded onboarding context and references.

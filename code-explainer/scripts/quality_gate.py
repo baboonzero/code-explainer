@@ -24,6 +24,7 @@ REQUIRED_OUTPUTS = [
     "meta/analysis_manifest.json",
     "meta/confidence_report.json",
     "meta/source_attribution.json",
+    "meta/coverage_report.json",
 ]
 
 
@@ -59,6 +60,41 @@ def _check_claim_evidence(confidence_report: Dict[str, Any], attribution_report:
     return errors
 
 
+def _check_semantic_quality(output_root: Path) -> List[str]:
+    warnings: List[str] = []
+    entrypoints = common.read_json(output_root / "meta" / "entrypoints.json", default={})
+    if int(entrypoints.get("count", 0)) == 0:
+        warnings.append("No entrypoints detected; onboarding flow guidance may be incomplete.")
+
+    coverage = common.read_json(output_root / "meta" / "coverage_report.json", default={})
+    discovered = int(coverage.get("discovered_count", 0))
+    parsed = int(coverage.get("parsed_count", 0))
+    if discovered > 0 and parsed == 0:
+        warnings.append("Documentation discovered but none parsed; overview may miss project intent from docs.")
+    elif discovered >= 5 and parsed / max(discovered, 1) < 0.4:
+        warnings.append("Low documentation parse coverage (<40%); review coverage_report.json for skipped reasons.")
+
+    overview_text = common.read_text(output_root / "overview" / "OVERVIEW.md").lower()
+    generic_markers = [
+        "user goal",
+        "need context?",
+        "service layer",
+        "data layer",
+        "core module",
+    ]
+    generic_hits = [marker for marker in generic_markers if marker in overview_text]
+    if len(generic_hits) >= 3:
+        warnings.append(
+            "Overview appears overly generic (placeholder-like phrases detected); consider deeper mode or tighter include-glob filters."
+        )
+
+    flows = common.read_json(output_root / "meta" / "flows.json", default={})
+    if int(flows.get("dependency_edge_count", 0)) > 0 and not flows.get("critical_paths"):
+        warnings.append("Dependency edges were found but no critical paths were extracted.")
+
+    return warnings
+
+
 def run_quality_gate(output_root: Path, mode: str) -> Dict[str, Any]:
     errors: List[str] = []
     warnings: List[str] = []
@@ -78,6 +114,7 @@ def run_quality_gate(output_root: Path, mode: str) -> Dict[str, Any]:
     confidence = common.read_json(output_root / "meta" / "confidence_report.json", default={"claims": []})
     attribution = common.read_json(output_root / "meta" / "source_attribution.json", default={"attributions": []})
     errors.extend(_check_claim_evidence(confidence, attribution))
+    warnings.extend(_check_semantic_quality(output_root))
 
     payload = {
         "checked_at": common.now_iso(),

@@ -3,11 +3,13 @@
 Generated: {{generated_at}}  
 Source: `{{source}}`  
 Mode: `{{mode}}`  
-Audience: `{{audience}}`
+Audience: `{{audience}}`  
+Length: `{{overview_length}}`
 
 ## What This System Is
 
-This repository contains the core software system for **{{repo_name}}**.  
+{{plain_summary}}
+
 It appears to follow a **{{architecture_pattern}}** architecture with a stack centered on:
 
 - Languages: {{top_languages}}
@@ -15,13 +17,21 @@ It appears to follow a **{{architecture_pattern}}** architecture with a stack ce
 
 ## Who Uses It and Why
 
-- PMs and designers use this explainer to understand product surfaces and user flows.
-- New engineers use this explainer to identify entry points and module boundaries.
-- Senior engineers use deep docs to evaluate architecture and dependency risk.
+- {{audience_note}}
+- {{mode_note}}
+- {{overview_length_note}}
 
 ## Key Building Blocks (3-7)
 
 {{building_blocks}}
+
+## Documentation Coverage
+
+{{docs_coverage}}
+
+Start with these docs:
+
+{{docs_quick_links}}
 
 ## High-Level Architecture Diagram
 
@@ -30,8 +40,13 @@ It appears to follow a **{{architecture_pattern}}** architecture with a stack ce
 ## If You Are PM / Designer / New Engineer, Start Here
 
 1. Read this file top-to-bottom once.
-2. Open the user flow image: `../diagrams/svg/primary_user_flow.svg`.
+2. Open `../diagrams/svg/primary_user_flow.svg` and trace the flow: `{{primary_user_flow_summary}}`.
 3. Jump to module ownership and “where to modify” in the deep docs.
+4. If needed, inspect `meta/coverage_report.json` and `meta/confidence_report.json` for caveats.
+
+## External Context (Optional Enrichment)
+
+{{external_context_summary}}
 
 ## Deep Dive Links
 
@@ -40,4 +55,3 @@ It appears to follow a **{{architecture_pattern}}** architecture with a stack ce
 - [Flows Deep Explainer](../deep/FLOWS_DEEP.md)
 - [Dependencies Deep Explainer](../deep/DEPENDENCIES_DEEP.md)
 - [Glossary](../deep/GLOSSARY.md)
-

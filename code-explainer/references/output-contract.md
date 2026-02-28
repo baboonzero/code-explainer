@@ -23,8 +23,9 @@
 19. `meta/mermaid_validation.json`
 20. `meta/render_report.json`
 21. `meta/enrichment.json`
-22. `meta/docs_generation.json`
-23. `meta/quality_report.json`
+22. `meta/coverage_report.json`
+23. `meta/docs_generation.json`
+24. `meta/quality_report.json`
 
 ## Manifest Schema
 
@@ -40,6 +41,25 @@
 - `entrypoints`
 - `module_count`
 - `diagram_count`
+- `audience`
+- `overview_length`
+- `include_globs[]`
+- `exclude_globs[]`
+- `docs_discovered`
+- `docs_parsed`
+
+## Coverage Schema
+
+`coverage_report.json` contains:
+
+- `generated_at`
+- `mode`
+- `discovered_count`
+- `parsed_count`
+- `skipped_count`
+- `discovered_docs[]`
+- `parsed_docs[]` with `path`, `title`, `summary`, `headings[]`, `line_count`, `size_bytes`, `keywords[]`
+- `skipped_docs[]` with `path`, `reason`
 
 ## Confidence Schema
 
@@ -63,4 +83,3 @@
 - `source_type` (`local`, `web`, or `deepwiki`)
 - `source_uri`
 - `extraction_timestamp`
-

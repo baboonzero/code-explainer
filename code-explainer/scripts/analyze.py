@@ -18,6 +18,7 @@ import detect_stack
 import map_entrypoints
 import map_dependencies
 import map_flows
+import ingest_docs
 import build_diagrams
 import validate_mermaid
 import render_diagrams
@@ -78,11 +79,16 @@ def _write_manifest(
     output_root: Path,
     source: str,
     mode: str,
+    audience: str,
+    overview_length: str,
     repo_root: Path,
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
+    docs_payload: Dict[str, Any],
     module_count: int,
     diagram_count: int,
+    include_globs: List[str],
+    exclude_globs: List[str],
 ) -> None:
     manifest = {
         "source": source,
@@ -90,11 +96,17 @@ def _write_manifest(
         "commit_ref": common.maybe_git_ref(repo_root),
         "scan_time": common.now_iso(),
         "mode": mode,
+        "audience": audience,
+        "overview_length": overview_length,
         "languages": stack_payload.get("languages", {}),
         "frameworks": stack_payload.get("frameworks", []),
         "entrypoints": entry_payload.get("entrypoints", []),
+        "docs_discovered": docs_payload.get("discovered_count", 0),
+        "docs_parsed": docs_payload.get("parsed_count", 0),
         "module_count": module_count,
         "diagram_count": diagram_count,
+        "include_globs": include_globs,
+        "exclude_globs": exclude_globs,
     }
     common.write_json(output_root / "meta" / "analysis_manifest.json", manifest)
 
@@ -104,7 +116,10 @@ def run_pipeline(
     output_root: Path,
     mode: str,
     audience: str,
+    overview_length: str,
     enable_web_enrichment: bool,
+    include_globs: List[str] | None = None,
+    exclude_globs: List[str] | None = None,
 ) -> Dict[str, Any]:
     output_root = common.ensure_dir(output_root)
     meta_dir = common.ensure_dir(output_root / "meta")
@@ -116,11 +131,19 @@ def run_pipeline(
 
     repo_root, should_cleanup, cleanup_root = _resolve_source(source)
     try:
-        index_payload = index_repo.build_index(repo_root, meta_dir)
+        include_globs = include_globs or []
+        exclude_globs = exclude_globs or []
+        index_payload = index_repo.build_index(
+            repo_root,
+            meta_dir,
+            include_globs=include_globs,
+            exclude_globs=exclude_globs,
+        )
         stack_payload = detect_stack.analyze_stack(repo_root, index_payload, meta_dir)
-        entry_payload = map_entrypoints.map_entrypoints(index_payload, meta_dir)
+        entry_payload = map_entrypoints.map_entrypoints(index_payload, repo_root, meta_dir)
         dep_payload = map_dependencies.map_dependencies(repo_root, index_payload, meta_dir)
         flow_payload = map_flows.map_flows(stack_payload, entry_payload, dep_payload, meta_dir, mode)
+        coverage_payload = ingest_docs.ingest_docs(repo_root, index_payload, meta_dir, mode)
         enrichment_payload = enrich_external.enrich_external(source, meta_dir, enable_web_enrichment)
 
         diagram_manifest = build_diagrams.build_diagrams(
@@ -135,30 +158,37 @@ def run_pipeline(
         validation_payload = validate_mermaid.validate_mermaid(diagrams_dir, meta_dir)
         render_payload = render_diagrams.render_diagrams(diagrams_dir, output_root / "diagrams", theme="neutral")
 
-        docs_payload = generate_docs.generate_docs(
+        docs_gen_payload = generate_docs.generate_docs(
             output_root=output_root,
             templates_root=SCRIPT_DIR.parent / "assets" / "templates",
             source=source,
             mode=mode,
             audience=audience,
+            overview_length=overview_length,
             index_payload=index_payload,
             stack_payload=stack_payload,
             entry_payload=entry_payload,
             dep_payload=dep_payload,
             flow_payload=flow_payload,
             diagram_manifest=diagram_manifest,
+            docs_payload=coverage_payload,
             enrichment_payload=enrichment_payload,
         )
-        _write_confidence_and_attribution(output_root, docs_payload, enrichment_payload)
+        _write_confidence_and_attribution(output_root, docs_gen_payload, enrichment_payload)
         _write_manifest(
             output_root=output_root,
             source=source,
             mode=mode,
+            audience=audience,
+            overview_length=overview_length,
             repo_root=repo_root,
             stack_payload=stack_payload,
             entry_payload=entry_payload,
+            docs_payload=coverage_payload,
             module_count=len(index_payload.get("modules", [])),
             diagram_count=diagram_manifest.get("count", 0),
+            include_globs=include_globs,
+            exclude_globs=exclude_globs,
         )
 
         quality_payload = quality_gate.run_quality_gate(output_root, mode)
@@ -168,7 +198,10 @@ def run_pipeline(
             "output_root": output_root.as_posix(),
             "mode": mode,
             "audience": audience,
+            "overview_length": overview_length,
             "file_count": index_payload.get("file_count", 0),
+            "docs_discovered": coverage_payload.get("discovered_count", 0),
+            "docs_parsed": coverage_payload.get("parsed_count", 0),
             "diagram_count": diagram_manifest.get("count", 0),
             "validation_ok": validation_payload.get("overall_ok", False),
             "renderer": render_payload.get("renderer", ""),
@@ -188,6 +221,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Output directory root")
     parser.add_argument("--mode", default="standard", choices=["quick", "standard", "deep"])
     parser.add_argument("--audience", default="nontech", choices=["nontech", "mixed", "engineering"])
+    parser.add_argument("--overview-length", default="medium", choices=["short", "medium", "long"])
+    parser.add_argument(
+        "--include-glob",
+        action="append",
+        default=[],
+        help="Glob(s) to include. If provided, only matching files are indexed.",
+    )
+    parser.add_argument(
+        "--exclude-glob",
+        action="append",
+        default=[],
+        help="Glob(s) to exclude from indexing.",
+    )
     parser.add_argument("--enable-web-enrichment", default="true")
     return parser.parse_args()
 
@@ -205,7 +251,10 @@ def main() -> int:
         output_root=Path(args.output).resolve(),
         mode=mode,
         audience=args.audience,
+        overview_length=args.overview_length,
         enable_web_enrichment=web_enabled,
+        include_globs=args.include_glob,
+        exclude_globs=args.exclude_glob,
     )
     print("Code-explainer run complete:")
     for key in [
@@ -213,7 +262,10 @@ def main() -> int:
         "output_root",
         "mode",
         "audience",
+        "overview_length",
         "file_count",
+        "docs_discovered",
+        "docs_parsed",
         "diagram_count",
         "validation_ok",
         "renderer",

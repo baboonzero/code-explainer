@@ -6,6 +6,10 @@ Generated: {{generated_at}}
 
 {{request_lifecycle}}
 
+## Primary User Flow (Extracted)
+
+`{{primary_user_flow_summary}}`
+
 ## Flow and Sequence Diagrams
 
 - Request lifecycle: `../diagrams/svg/request_lifecycle_sequence.svg`
@@ -24,4 +28,4 @@ If mode is `deep`, additional assets are also available:
 1. Start with one user flow.
 2. Trace the same path in entrypoint and service layers.
 3. Confirm dependency boundaries before proposing changes.
-
+4. Cross-check assumptions using `meta/coverage_report.json` and `meta/confidence_report.json`.

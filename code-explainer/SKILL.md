@@ -34,6 +34,9 @@ python scripts/analyze.py analyze \
   --output <output_dir> \
   --mode <quick|standard|deep> \
   --audience <nontech|mixed|engineering> \
+  --overview-length <short|medium|long> \
+  --include-glob <pattern> \
+  --exclude-glob <pattern> \
   --enable-web-enrichment <true|false>
 ```
 
@@ -41,6 +44,7 @@ Defaults:
 
 - `mode=standard`
 - `audience=nontech`
+- `overview-length=medium`
 - `enable-web-enrichment=true`
 
 ## Dependencies
@@ -72,12 +76,13 @@ bash ./scripts/install_runtime.sh
 1. Intake and source normalization.
 2. Local index build (files/modules/symbol candidates).
 3. Stack/entrypoint/dependency/flow extraction.
-4. Optional DeepWiki + web enrichment with attribution.
-5. Mermaid generation (Context + Container + flow set).
-6. Mermaid validation.
-7. SVG then PNG rendering.
-8. Overview + deep markdown generation.
-9. Quality gates and confidence report generation.
+4. Documentation ingestion (`coverage_report.json`).
+5. Optional DeepWiki + web enrichment with attribution.
+6. Mermaid generation (Context + Container + flow set).
+7. Mermaid validation.
+8. SVG then PNG rendering.
+9. Overview + deep markdown generation.
+10. Quality gates and confidence report generation.
 
 ## Notes
 
