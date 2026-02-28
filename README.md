@@ -185,3 +185,12 @@ Then restart Codex so it picks up the new skill.
 3. Push to GitHub.
 4. Add `topics` such as: `codex-skill`, `agent-skill`, `mermaid`, `codebase-analysis`, `onboarding`.
 5. Submit/list the repository on skill directories (see notes in your assistant response).
+
+## License
+
+This project is licensed under the MIT License.
+
+- Full text: `LICENSE`
+- Copyright: `Copyright (c) 2026 Anshumani Ruddra`
+
+Created by Anshumani Ruddra
