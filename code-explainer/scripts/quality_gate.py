@@ -25,6 +25,7 @@ REQUIRED_OUTPUTS = [
     "meta/confidence_report.json",
     "meta/source_attribution.json",
     "meta/coverage_report.json",
+    "meta/llm_summary.json",
 ]
 
 
@@ -91,6 +92,11 @@ def _check_semantic_quality(output_root: Path) -> List[str]:
     flows = common.read_json(output_root / "meta" / "flows.json", default={})
     if int(flows.get("dependency_edge_count", 0)) > 0 and not flows.get("critical_paths"):
         warnings.append("Dependency edges were found but no critical paths were extracted.")
+
+    llm_summary = common.read_json(output_root / "meta" / "llm_summary.json", default={})
+    if llm_summary.get("enabled", False) and not llm_summary.get("used", False):
+        err = llm_summary.get("error", "LLM narrative was enabled but not used.")
+        warnings.append(f"LLM narrative unavailable: {err}")
 
     return warnings
 

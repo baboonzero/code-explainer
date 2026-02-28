@@ -37,6 +37,7 @@ python scripts/analyze.py analyze \
   --overview-length <short|medium|long> \
   --include-glob <pattern> \
   --exclude-glob <pattern> \
+  --enable-llm-descriptions <true|false> \
   --enable-web-enrichment <true|false>
 ```
 
@@ -45,6 +46,7 @@ Defaults:
 - `mode=standard`
 - `audience=nontech`
 - `overview-length=medium`
+- `enable-llm-descriptions=true`
 - `enable-web-enrichment=true`
 
 ## Dependencies
@@ -77,18 +79,21 @@ bash ./scripts/install_runtime.sh
 2. Local index build (files/modules/symbol candidates).
 3. Stack/entrypoint/dependency/flow extraction.
 4. Documentation ingestion (`coverage_report.json`).
-5. Optional DeepWiki + web enrichment with attribution.
-6. Mermaid generation (Context + Container + flow set).
-7. Mermaid validation.
-8. SVG then PNG rendering.
-9. Overview + deep markdown generation.
-10. Quality gates and confidence report generation.
+5. Optional LLM narrative generation (`llm_summary.json`).
+6. Optional DeepWiki + web enrichment with attribution.
+7. Mermaid generation (Context + Container + flow set).
+8. Mermaid validation.
+9. SVG then PNG rendering.
+10. Overview + deep markdown generation.
+11. Quality gates and confidence report generation.
 
 ## Notes
 
 - For GitHub URLs, `git` must be available on PATH.
 - For high-fidelity diagram rendering, `mmdc` should be installed.
 - Without `mmdc`, fallback rendering is used and flagged in reports.
+- For LLM narrative summaries, set `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`).
+- Optional: set `CODE_EXPLAINER_LLM_BASE_URL` and `CODE_EXPLAINER_LLM_MODEL`.
 - This skill does not mutate the analyzed target repository.
 
 ## Dependency Troubleshooting

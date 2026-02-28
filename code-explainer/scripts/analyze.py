@@ -19,6 +19,7 @@ import map_entrypoints
 import map_dependencies
 import map_flows
 import ingest_docs
+import llm_describe
 import build_diagrams
 import validate_mermaid
 import render_diagrams
@@ -85,6 +86,7 @@ def _write_manifest(
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
+    llm_payload: Dict[str, Any],
     module_count: int,
     diagram_count: int,
     include_globs: List[str],
@@ -103,6 +105,9 @@ def _write_manifest(
         "entrypoints": entry_payload.get("entrypoints", []),
         "docs_discovered": docs_payload.get("discovered_count", 0),
         "docs_parsed": docs_payload.get("parsed_count", 0),
+        "llm_descriptions_enabled": llm_payload.get("enabled", False),
+        "llm_descriptions_used": llm_payload.get("used", False),
+        "llm_model": llm_payload.get("model", ""),
         "module_count": module_count,
         "diagram_count": diagram_count,
         "include_globs": include_globs,
@@ -118,6 +123,7 @@ def run_pipeline(
     audience: str,
     overview_length: str,
     enable_web_enrichment: bool,
+    enable_llm_descriptions: bool,
     include_globs: List[str] | None = None,
     exclude_globs: List[str] | None = None,
 ) -> Dict[str, Any]:
@@ -145,6 +151,20 @@ def run_pipeline(
         flow_payload = map_flows.map_flows(stack_payload, entry_payload, dep_payload, meta_dir, mode)
         coverage_payload = ingest_docs.ingest_docs(repo_root, index_payload, meta_dir, mode)
         enrichment_payload = enrich_external.enrich_external(source, meta_dir, enable_web_enrichment)
+        llm_payload = llm_describe.generate_llm_descriptions(
+            repo_root=repo_root,
+            source=source,
+            mode=mode,
+            audience=audience,
+            index_payload=index_payload,
+            stack_payload=stack_payload,
+            entry_payload=entry_payload,
+            dep_payload=dep_payload,
+            flow_payload=flow_payload,
+            docs_payload=coverage_payload,
+            out_dir=meta_dir,
+            enabled=enable_llm_descriptions,
+        )
 
         diagram_manifest = build_diagrams.build_diagrams(
             stack=stack_payload,
@@ -172,6 +192,7 @@ def run_pipeline(
             flow_payload=flow_payload,
             diagram_manifest=diagram_manifest,
             docs_payload=coverage_payload,
+            llm_payload=llm_payload,
             enrichment_payload=enrichment_payload,
         )
         _write_confidence_and_attribution(output_root, docs_gen_payload, enrichment_payload)
@@ -185,6 +206,7 @@ def run_pipeline(
             stack_payload=stack_payload,
             entry_payload=entry_payload,
             docs_payload=coverage_payload,
+            llm_payload=llm_payload,
             module_count=len(index_payload.get("modules", [])),
             diagram_count=diagram_manifest.get("count", 0),
             include_globs=include_globs,
@@ -202,6 +224,7 @@ def run_pipeline(
             "file_count": index_payload.get("file_count", 0),
             "docs_discovered": coverage_payload.get("discovered_count", 0),
             "docs_parsed": coverage_payload.get("parsed_count", 0),
+            "llm_descriptions_used": llm_payload.get("used", False),
             "diagram_count": diagram_manifest.get("count", 0),
             "validation_ok": validation_payload.get("overall_ok", False),
             "renderer": render_payload.get("renderer", ""),
@@ -235,6 +258,7 @@ def _parse_args() -> argparse.Namespace:
         help="Glob(s) to exclude from indexing.",
     )
     parser.add_argument("--enable-web-enrichment", default="true")
+    parser.add_argument("--enable-llm-descriptions", default="true")
     return parser.parse_args()
 
 
@@ -246,6 +270,7 @@ def main() -> int:
 
     mode = common.normalize_mode(args.mode)
     web_enabled = common.bool_from_string(args.enable_web_enrichment)
+    llm_enabled = common.bool_from_string(args.enable_llm_descriptions)
     summary = run_pipeline(
         source=args.source,
         output_root=Path(args.output).resolve(),
@@ -253,6 +278,7 @@ def main() -> int:
         audience=args.audience,
         overview_length=args.overview_length,
         enable_web_enrichment=web_enabled,
+        enable_llm_descriptions=llm_enabled,
         include_globs=args.include_glob,
         exclude_globs=args.exclude_glob,
     )
@@ -266,6 +292,7 @@ def main() -> int:
         "file_count",
         "docs_discovered",
         "docs_parsed",
+        "llm_descriptions_used",
         "diagram_count",
         "validation_ok",
         "renderer",

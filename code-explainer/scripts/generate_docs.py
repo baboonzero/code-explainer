@@ -77,6 +77,46 @@ def _where_to_modify(modules: List[Dict[str, Any]], limit: int) -> str:
     return "\n".join(suggestions)
 
 
+def _llm_directory_summaries(llm_payload: Dict[str, Any], fallback_modules: List[Dict[str, Any]], limit: int = 8) -> str:
+    items = llm_payload.get("directory_summaries", [])
+    lines: List[str] = []
+    if isinstance(items, list):
+        for item in items[:limit]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            summary = str(item.get("summary", "")).strip()
+            if not name or not summary:
+                continue
+            lines.append(f"- **{name}**: {summary}")
+    if lines:
+        return "\n".join(lines)
+
+    for module in fallback_modules[:limit]:
+        name = module.get("name", "")
+        if not name:
+            continue
+        lines.append(f"- **{name}**: Module with {module.get('file_count', 0)} files.")
+    return "\n".join(lines) if lines else "- No directory-level summary available."
+
+
+def _llm_deep_dive_starters(llm_payload: Dict[str, Any]) -> str:
+    starters = llm_payload.get("deep_dive_starters", [])
+    if not isinstance(starters, list) or not starters:
+        return "- Start from entrypoints, then trace one request through dependencies."
+    return "\n".join([f"- {str(item)}" for item in starters[:6]])
+
+
+def _llm_confidence_notes(llm_payload: Dict[str, Any]) -> str:
+    notes = llm_payload.get("confidence_notes", [])
+    if not isinstance(notes, list) or not notes:
+        if llm_payload.get("enabled", False) and not llm_payload.get("used", False):
+            error = llm_payload.get("error", "LLM summary unavailable for this run.")
+            return f"- {error}"
+        return "- LLM summary disabled; deterministic analysis remains primary."
+    return "\n".join([f"- {str(item)}" for item in notes[:6]])
+
+
 def _glossary_terms(
     stack_payload: Dict[str, Any],
     dep_payload: Dict[str, Any],
@@ -216,8 +256,13 @@ def _plain_system_summary(
     repo_name: str,
     stack_payload: Dict[str, Any],
     doc_payload: Dict[str, Any],
+    llm_payload: Dict[str, Any],
     audience: str,
 ) -> str:
+    llm_summary = str(llm_payload.get("repo_summary_paragraph", "")).strip()
+    if llm_summary:
+        return llm_summary
+
     parsed_docs = doc_payload.get("parsed_docs", [])
     summary_doc = _pick_summary_doc(parsed_docs)
     if summary_doc:
@@ -297,6 +342,7 @@ def generate_docs(
     flow_payload: Dict[str, Any],
     diagram_manifest: Dict[str, Any],
     docs_payload: Dict[str, Any],
+    llm_payload: Dict[str, Any],
     enrichment_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     overview_dir = common.ensure_dir(output_root / "overview")
@@ -335,11 +381,16 @@ def generate_docs(
         "audience_note": _audience_note(audience),
         "mode_note": _mode_note(mode),
         "overview_length_note": _overview_length_note(overview_length),
-        "plain_summary": _plain_system_summary(repo_name, stack_payload, docs_payload, audience),
+        "plain_summary": _plain_system_summary(repo_name, stack_payload, docs_payload, llm_payload, audience),
         "docs_coverage": _docs_coverage_line(docs_payload),
         "docs_quick_links": _docs_summary(docs_payload, profile["doc_link_limit"]),
         "primary_user_flow_summary": _primary_flow_summary(flow_payload),
         "external_context_summary": _external_context_summary(enrichment_payload),
+        "directory_plain_summaries": _llm_directory_summaries(llm_payload, modules, limit=profile["module_limit"]),
+        "llm_deep_dive_starters": _llm_deep_dive_starters(llm_payload),
+        "llm_confidence_notes": _llm_confidence_notes(llm_payload),
+        "llm_enabled": "true" if llm_payload.get("enabled", False) else "false",
+        "llm_used": "true" if llm_payload.get("used", False) else "false",
     }
 
     overview_template = common.load_template(templates_root / "overview.md.j2")
@@ -422,6 +473,17 @@ Generated at: {common.now_iso()}
         ),
     ]
 
+    if llm_payload.get("used", False):
+        claims.append(
+            common.collect_claim(
+                "claim_llm_narrative",
+                "An LLM-generated narrative summary was incorporated for repository and directory explainers.",
+                ["meta/llm_summary.json"],
+                0.7,
+                "Generated from deterministic context payload + model inference.",
+            )
+        )
+
     if enrichment_payload.get("records"):
         claims.append(
             common.collect_claim(
@@ -467,6 +529,7 @@ def main() -> int:
     parser.add_argument("--flows", required=True)
     parser.add_argument("--diagram-manifest", required=True)
     parser.add_argument("--coverage", required=True)
+    parser.add_argument("--llm-summary", required=True)
     parser.add_argument("--enrichment", required=True)
     args = parser.parse_args()
 
@@ -484,6 +547,7 @@ def main() -> int:
         flow_payload=common.read_json(Path(args.flows), default={}),
         diagram_manifest=common.read_json(Path(args.diagram_manifest), default={}),
         docs_payload=common.read_json(Path(args.coverage), default={}),
+        llm_payload=common.read_json(Path(args.llm_summary), default={}),
         enrichment_payload=common.read_json(Path(args.enrichment), default={}),
     )
     print(json.dumps({"overview": payload["overview_file"], "deep_count": len(payload["deep_files"])}, indent=2))

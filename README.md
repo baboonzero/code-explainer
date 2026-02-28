@@ -145,6 +145,7 @@ python scripts/analyze.py analyze \
   --mode standard \
   --audience nontech \
   --overview-length medium \
+  --enable-llm-descriptions true \
   --enable-web-enrichment true
 ```
 
@@ -152,6 +153,11 @@ Useful optional controls:
 
 - `--include-glob "<pattern>"` (repeatable) to scope analysis to specific paths
 - `--exclude-glob "<pattern>"` (repeatable) to remove generated/irrelevant files
+
+For LLM-based narrative summaries:
+
+- Set `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`)
+- Optional: `CODE_EXPLAINER_LLM_BASE_URL`, `CODE_EXPLAINER_LLM_MODEL`
 
 ## Install From GitHub (For Other Developers)
 

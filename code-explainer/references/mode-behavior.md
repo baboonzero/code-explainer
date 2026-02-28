@@ -32,9 +32,18 @@ Goal: Maximum fidelity and audit-ready onboarding.
 - `nontech`: plain-language phrasing first, minimal jargon.
 - `mixed`: business-and-technical balance.
 - `engineering`: technical detail and traceability emphasis.
+- If LLM narrative is enabled and available, wording is further adapted per audience.
 
 ## Overview Length
 
 - `short`: executive skim.
 - `medium`: balanced default.
 - `long`: expanded onboarding context and references.
+
+## LLM Narrative
+
+- Controlled with `--enable-llm-descriptions <true|false>`.
+- Reads API config from env vars:
+- `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`)
+- `CODE_EXPLAINER_LLM_BASE_URL` (optional)
+- `CODE_EXPLAINER_LLM_MODEL` (optional)

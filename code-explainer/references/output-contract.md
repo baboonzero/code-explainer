@@ -24,8 +24,9 @@
 20. `meta/render_report.json`
 21. `meta/enrichment.json`
 22. `meta/coverage_report.json`
-23. `meta/docs_generation.json`
-24. `meta/quality_report.json`
+23. `meta/llm_summary.json`
+24. `meta/docs_generation.json`
+25. `meta/quality_report.json`
 
 ## Manifest Schema
 
@@ -47,6 +48,9 @@
 - `exclude_globs[]`
 - `docs_discovered`
 - `docs_parsed`
+- `llm_descriptions_enabled`
+- `llm_descriptions_used`
+- `llm_model`
 
 ## Coverage Schema
 
@@ -60,6 +64,21 @@
 - `discovered_docs[]`
 - `parsed_docs[]` with `path`, `title`, `summary`, `headings[]`, `line_count`, `size_bytes`, `keywords[]`
 - `skipped_docs[]` with `path`, `reason`
+
+## LLM Narrative Schema
+
+`llm_summary.json` contains:
+
+- `generated_at`
+- `enabled`
+- `used`
+- `provider`
+- `model`
+- `repo_summary_paragraph`
+- `directory_summaries[]` with `name`, `summary`
+- `deep_dive_starters[]`
+- `confidence_notes[]`
+- `error`
 
 ## Confidence Schema
 
