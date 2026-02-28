@@ -38,6 +38,8 @@ python scripts/analyze.py analyze \
   --include-glob <pattern> \
   --exclude-glob <pattern> \
   --enable-llm-descriptions <true|false> \
+  --ask-before-llm-use <true|false> \
+  --prompt-for-llm-key <true|false> \
   --enable-web-enrichment <true|false>
 ```
 
@@ -47,6 +49,8 @@ Defaults:
 - `audience=nontech`
 - `overview-length=medium`
 - `enable-llm-descriptions=true`
+- `ask-before-llm-use=false`
+- `prompt-for-llm-key=false`
 - `enable-web-enrichment=true`
 
 ## Dependencies
@@ -94,6 +98,9 @@ bash ./scripts/install_runtime.sh
 - Without `mmdc`, fallback rendering is used and flagged in reports.
 - For LLM narrative summaries, set `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`).
 - Optional: set `CODE_EXPLAINER_LLM_BASE_URL` and `CODE_EXPLAINER_LLM_MODEL`.
+- If you want interactive control, enable:
+- `--ask-before-llm-use true`
+- `--prompt-for-llm-key true`
 - This skill does not mutate the analyzed target repository.
 
 ## Dependency Troubleshooting

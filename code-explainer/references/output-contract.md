@@ -72,6 +72,8 @@
 - `generated_at`
 - `enabled`
 - `used`
+- `asked_before_use`
+- `prompted_for_key`
 - `provider`
 - `model`
 - `repo_summary_paragraph`

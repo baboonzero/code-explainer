@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import re
@@ -25,6 +26,25 @@ DEFAULT_BASE_URL = "https://api.openai.com/v1"
 def _normalize_base_url(url: str) -> str:
     clean = (url or DEFAULT_BASE_URL).strip().rstrip("/")
     return clean or DEFAULT_BASE_URL
+
+
+def _is_interactive_terminal() -> bool:
+    try:
+        return bool(sys.stdin.isatty() and sys.stdout.isatty())
+    except Exception:
+        return False
+
+
+def _confirm_llm_usage() -> bool:
+    answer = input("Use LLM to generate narrative summaries for this run? [y/N]: ").strip().lower()
+    return answer in {"y", "yes"}
+
+
+def _prompt_api_key() -> str:
+    try:
+        return getpass.getpass("Enter LLM API key (input hidden): ").strip()
+    except Exception:
+        return ""
 
 
 def _post_json(url: str, api_key: str, payload: Dict[str, Any], timeout: int = 90) -> Tuple[int, str]:
@@ -161,6 +181,8 @@ def _default_llm_payload(enabled: bool, model: str) -> Dict[str, Any]:
         "generated_at": common.now_iso(),
         "enabled": enabled,
         "used": False,
+        "asked_before_use": False,
+        "prompted_for_key": False,
         "provider": "openai_compatible",
         "model": model,
         "repo_summary_paragraph": "",
@@ -184,6 +206,8 @@ def generate_llm_descriptions(
     docs_payload: Dict[str, Any],
     out_dir: Path,
     enabled: bool = True,
+    ask_before_use: bool = False,
+    prompt_for_key: bool = False,
 ) -> Dict[str, Any]:
     model = os.environ.get("CODE_EXPLAINER_LLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
     payload = _default_llm_payload(enabled=enabled, model=model)
@@ -191,10 +215,32 @@ def generate_llm_descriptions(
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
+    interactive = _is_interactive_terminal()
+    if ask_before_use:
+        payload["asked_before_use"] = True
+        if not interactive:
+            payload["enabled"] = False
+            payload["error"] = "LLM ask-before-use requested but terminal is non-interactive; skipped."
+            common.write_json(out_dir / "llm_summary.json", payload)
+            return payload
+        if not _confirm_llm_usage():
+            payload["enabled"] = False
+            payload["error"] = "User declined LLM narrative generation for this run."
+            common.write_json(out_dir / "llm_summary.json", payload)
+            return payload
+
     api_key = (
         os.environ.get("CODE_EXPLAINER_LLM_API_KEY", "").strip()
         or os.environ.get("OPENAI_API_KEY", "").strip()
     )
+    if not api_key and prompt_for_key:
+        payload["prompted_for_key"] = True
+        if not interactive:
+            payload["error"] = "Prompt-for-key requested but terminal is non-interactive and no key was found."
+            common.write_json(out_dir / "llm_summary.json", payload)
+            return payload
+        api_key = _prompt_api_key()
+
     if not api_key:
         payload["error"] = "No API key found (set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
         common.write_json(out_dir / "llm_summary.json", payload)
@@ -286,6 +332,8 @@ def main() -> int:
     parser.add_argument("--coverage", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--enabled", default="true")
+    parser.add_argument("--ask-before-use", default="false")
+    parser.add_argument("--prompt-for-key", default="false")
     args = parser.parse_args()
 
     payload = generate_llm_descriptions(
@@ -301,6 +349,8 @@ def main() -> int:
         docs_payload=common.read_json(Path(args.coverage), default={}),
         out_dir=Path(args.output).resolve(),
         enabled=common.bool_from_string(args.enabled),
+        ask_before_use=common.bool_from_string(args.ask_before_use),
+        prompt_for_key=common.bool_from_string(args.prompt_for_key),
     )
     print(json.dumps({"used": payload.get("used", False), "error": payload.get("error", "")}, indent=2))
     return 0

@@ -124,6 +124,8 @@ def run_pipeline(
     overview_length: str,
     enable_web_enrichment: bool,
     enable_llm_descriptions: bool,
+    ask_before_llm_use: bool = False,
+    prompt_for_llm_key: bool = False,
     include_globs: List[str] | None = None,
     exclude_globs: List[str] | None = None,
 ) -> Dict[str, Any]:
@@ -164,6 +166,8 @@ def run_pipeline(
             docs_payload=coverage_payload,
             out_dir=meta_dir,
             enabled=enable_llm_descriptions,
+            ask_before_use=ask_before_llm_use,
+            prompt_for_key=prompt_for_llm_key,
         )
 
         diagram_manifest = build_diagrams.build_diagrams(
@@ -259,6 +263,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--enable-web-enrichment", default="true")
     parser.add_argument("--enable-llm-descriptions", default="true")
+    parser.add_argument("--ask-before-llm-use", default="false")
+    parser.add_argument("--prompt-for-llm-key", default="false")
     return parser.parse_args()
 
 
@@ -271,6 +277,8 @@ def main() -> int:
     mode = common.normalize_mode(args.mode)
     web_enabled = common.bool_from_string(args.enable_web_enrichment)
     llm_enabled = common.bool_from_string(args.enable_llm_descriptions)
+    ask_before_llm_use = common.bool_from_string(args.ask_before_llm_use)
+    prompt_for_llm_key = common.bool_from_string(args.prompt_for_llm_key)
     summary = run_pipeline(
         source=args.source,
         output_root=Path(args.output).resolve(),
@@ -279,6 +287,8 @@ def main() -> int:
         overview_length=args.overview_length,
         enable_web_enrichment=web_enabled,
         enable_llm_descriptions=llm_enabled,
+        ask_before_llm_use=ask_before_llm_use,
+        prompt_for_llm_key=prompt_for_llm_key,
         include_globs=args.include_glob,
         exclude_globs=args.exclude_glob,
     )

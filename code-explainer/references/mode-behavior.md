@@ -43,6 +43,9 @@ Goal: Maximum fidelity and audit-ready onboarding.
 ## LLM Narrative
 
 - Controlled with `--enable-llm-descriptions <true|false>`.
+- Optional interactive controls:
+- `--ask-before-llm-use true`
+- `--prompt-for-llm-key true`
 - Reads API config from env vars:
 - `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`)
 - `CODE_EXPLAINER_LLM_BASE_URL` (optional)

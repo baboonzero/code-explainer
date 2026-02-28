@@ -146,6 +146,8 @@ python scripts/analyze.py analyze \
   --audience nontech \
   --overview-length medium \
   --enable-llm-descriptions true \
+  --ask-before-llm-use false \
+  --prompt-for-llm-key false \
   --enable-web-enrichment true
 ```
 
@@ -158,6 +160,9 @@ For LLM-based narrative summaries:
 
 - Set `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`)
 - Optional: `CODE_EXPLAINER_LLM_BASE_URL`, `CODE_EXPLAINER_LLM_MODEL`
+- Optional interactive controls:
+- `--ask-before-llm-use true` (prompt for permission)
+- `--prompt-for-llm-key true` (securely prompt for key when missing)
 
 ## Install From GitHub (For Other Developers)
 
