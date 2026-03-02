@@ -95,12 +95,14 @@ def _compact_context(
     source: str,
     mode: str,
     audience: str,
+    analysis_type: str,
     index_payload: Dict[str, Any],
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
     dep_payload: Dict[str, Any],
     flow_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
+    context_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     modules = []
     for module in index_payload.get("modules", [])[:20]:
@@ -137,6 +139,7 @@ def _compact_context(
         "source": source,
         "mode": mode,
         "audience": audience,
+        "analysis_type": analysis_type,
         "repo_name": stack_payload.get("repo_name", ""),
         "architecture_pattern": stack_payload.get("architecture_pattern", ""),
         "primary_language": stack_payload.get("primary_language", ""),
@@ -149,6 +152,7 @@ def _compact_context(
         "docs": docs,
         "external_dependencies": external_deps,
         "internal_edge_count": dep_payload.get("internal_edge_count", 0),
+        "mode_context": context_payload,
     }
 
 
@@ -167,6 +171,7 @@ def _request_messages(context_payload: Dict[str, Any]) -> List[Dict[str, str]]:
         "deep_dive_starters (array of 3-6 concise bullets),\n"
         "confidence_notes (array of 2-5 concise notes).\n"
         "Summaries must be specific and useful for onboarding.\n"
+        "Adapt framing to analysis_type (onboarding/project-recap/plan-review/diff-review).\n"
         "Limit directory_summaries to top-level modules in context.\n"
         f"Context:\n{json.dumps(context_payload, ensure_ascii=False)}"
     )
@@ -198,12 +203,14 @@ def generate_llm_descriptions(
     source: str,
     mode: str,
     audience: str,
+    analysis_type: str,
     index_payload: Dict[str, Any],
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
     dep_payload: Dict[str, Any],
     flow_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
+    context_payload: Dict[str, Any],
     out_dir: Path,
     enabled: bool = True,
     ask_before_use: bool = False,
@@ -252,12 +259,14 @@ def generate_llm_descriptions(
         source=source,
         mode=mode,
         audience=audience,
+        analysis_type=analysis_type,
         index_payload=index_payload,
         stack_payload=stack_payload,
         entry_payload=entry_payload,
         dep_payload=dep_payload,
         flow_payload=flow_payload,
         docs_payload=docs_payload,
+        context_payload=context_payload,
     )
 
     request_payload = {
@@ -324,12 +333,14 @@ def main() -> int:
     parser.add_argument("--source", required=True)
     parser.add_argument("--mode", default="standard")
     parser.add_argument("--audience", default="nontech")
+    parser.add_argument("--analysis-type", default="onboarding")
     parser.add_argument("--index", required=True)
     parser.add_argument("--stack", required=True)
     parser.add_argument("--entrypoints", required=True)
     parser.add_argument("--dependencies", required=True)
     parser.add_argument("--flows", required=True)
     parser.add_argument("--coverage", required=True)
+    parser.add_argument("--explainer-context", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--enabled", default="true")
     parser.add_argument("--ask-before-use", default="false")
@@ -341,12 +352,14 @@ def main() -> int:
         source=args.source,
         mode=common.normalize_mode(args.mode),
         audience=args.audience,
+        analysis_type=args.analysis_type,
         index_payload=common.read_json(Path(args.index), default={}),
         stack_payload=common.read_json(Path(args.stack), default={}),
         entry_payload=common.read_json(Path(args.entrypoints), default={}),
         dep_payload=common.read_json(Path(args.dependencies), default={}),
         flow_payload=common.read_json(Path(args.flows), default={}),
         docs_payload=common.read_json(Path(args.coverage), default={}),
+        context_payload=common.read_json(Path(args.explainer_context), default={}),
         out_dir=Path(args.output).resolve(),
         enabled=common.bool_from_string(args.enabled),
         ask_before_use=common.bool_from_string(args.ask_before_use),

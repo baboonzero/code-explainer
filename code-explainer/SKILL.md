@@ -33,8 +33,13 @@ python scripts/analyze.py analyze \
   --source <local_path_or_github_url> \
   --output <output_dir> \
   --mode <quick|standard|deep> \
+  --format <markdown|html|both> \
+  --explainer-type <onboarding|project-recap|plan-review|diff-review> \
   --audience <nontech|mixed|engineering> \
   --overview-length <short|medium|long> \
+  --since <time_window> \
+  --git-ref <ref> \
+  --plan-file <path> \
   --include-glob <pattern> \
   --exclude-glob <pattern> \
   --enable-llm-descriptions <true|false> \
@@ -46,6 +51,8 @@ python scripts/analyze.py analyze \
 Defaults:
 
 - `mode=standard`
+- `format=markdown`
+- `explainer-type=onboarding`
 - `audience=nontech`
 - `overview-length=medium`
 - `enable-llm-descriptions=true`
@@ -83,13 +90,16 @@ bash ./scripts/install_runtime.sh
 2. Local index build (files/modules/symbol candidates).
 3. Stack/entrypoint/dependency/flow extraction.
 4. Documentation ingestion (`coverage_report.json`).
-5. Optional LLM narrative generation (`llm_summary.json`).
-6. Optional DeepWiki + web enrichment with attribution.
-7. Mermaid generation (Context + Container + flow set).
-8. Mermaid validation.
-9. SVG then PNG rendering.
-10. Overview + deep markdown generation.
-11. Quality gates and confidence report generation.
+5. Mode-specific context extraction (`explainer_context.json`).
+6. Verification checkpoint generation (`verification_checkpoint.json`).
+7. Optional LLM narrative generation (`llm_summary.json`).
+8. Optional DeepWiki + web enrichment with attribution.
+9. Mermaid generation (Context + Container + flow set).
+10. Mermaid validation.
+11. SVG then PNG rendering.
+12. Markdown and/or HTML explainer generation.
+13. Fact-check pass (`fact_check_report.json`).
+14. Quality gates, completeness checks, and confidence report generation.
 
 ## Notes
 

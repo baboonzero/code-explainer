@@ -6,10 +6,14 @@ Outputs include:
 
 - Crisp top-level overview (`OVERVIEW.md`)
 - Linked deep explainers (architecture, modules, flows, dependencies, glossary)
+- Optional interactive HTML explainer (`html/ONBOARDING.html`)
 - Mermaid source diagrams (`.mmd`)
 - Rendered SVG and PNG diagrams
 - Confidence, attribution, and quality reports (`meta/*.json`)
 - Documentation coverage report (`meta/coverage_report.json`)
+- Verification checkpoint (`meta/verification_checkpoint.json`)
+- Fact-check report (`meta/fact_check_report.json`)
+- Content completeness report (`meta/content_completeness.json`)
 
 ## Repository Layout
 
@@ -143,6 +147,8 @@ python scripts/analyze.py analyze \
   --source <local_path_or_github_url> \
   --output <output_dir> \
   --mode standard \
+  --format both \
+  --explainer-type onboarding \
   --audience nontech \
   --overview-length medium \
   --enable-llm-descriptions true \
@@ -155,6 +161,11 @@ Useful optional controls:
 
 - `--include-glob "<pattern>"` (repeatable) to scope analysis to specific paths
 - `--exclude-glob "<pattern>"` (repeatable) to remove generated/irrelevant files
+- `--format markdown|html|both`
+- `--explainer-type onboarding|project-recap|plan-review|diff-review`
+- `--since "<window>"` for `project-recap`
+- `--plan-file <path>` for `plan-review`
+- `--git-ref <ref>` for `diff-review`
 
 For LLM-based narrative summaries:
 

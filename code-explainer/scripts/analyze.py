@@ -19,12 +19,16 @@ import map_entrypoints
 import map_dependencies
 import map_flows
 import ingest_docs
+import explainer_context
+import verification_checkpoint
 import llm_describe
 import build_diagrams
 import validate_mermaid
 import render_diagrams
 import enrich_external
 import generate_docs
+import generate_html
+import fact_check
 import quality_gate
 
 
@@ -82,11 +86,16 @@ def _write_manifest(
     mode: str,
     audience: str,
     overview_length: str,
+    output_format: str,
+    analysis_type: str,
     repo_root: Path,
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
     llm_payload: Dict[str, Any],
+    verification_payload: Dict[str, Any],
+    html_payload: Dict[str, Any],
+    fact_check_payload: Dict[str, Any],
     module_count: int,
     diagram_count: int,
     include_globs: List[str],
@@ -100,6 +109,8 @@ def _write_manifest(
         "mode": mode,
         "audience": audience,
         "overview_length": overview_length,
+        "output_format": output_format,
+        "analysis_type": analysis_type,
         "languages": stack_payload.get("languages", {}),
         "frameworks": stack_payload.get("frameworks", []),
         "entrypoints": entry_payload.get("entrypoints", []),
@@ -108,6 +119,9 @@ def _write_manifest(
         "llm_descriptions_enabled": llm_payload.get("enabled", False),
         "llm_descriptions_used": llm_payload.get("used", False),
         "llm_model": llm_payload.get("model", ""),
+        "verification_fact_count": verification_payload.get("fact_count", 0),
+        "fact_check_passed": fact_check_payload.get("passed", False),
+        "html_generated": bool(html_payload.get("output_file")),
         "module_count": module_count,
         "diagram_count": diagram_count,
         "include_globs": include_globs,
@@ -122,12 +136,17 @@ def run_pipeline(
     mode: str,
     audience: str,
     overview_length: str,
+    output_format: str,
+    analysis_type: str,
     enable_web_enrichment: bool,
     enable_llm_descriptions: bool,
     ask_before_llm_use: bool = False,
     prompt_for_llm_key: bool = False,
     include_globs: List[str] | None = None,
     exclude_globs: List[str] | None = None,
+    since: str = "2 weeks ago",
+    git_ref: str = "main",
+    plan_file: str = "",
 ) -> Dict[str, Any]:
     output_root = common.ensure_dir(output_root)
     meta_dir = common.ensure_dir(output_root / "meta")
@@ -136,6 +155,7 @@ def run_pipeline(
     common.ensure_dir(output_root / "deep")
     common.ensure_dir(output_root / "diagrams" / "svg")
     common.ensure_dir(output_root / "diagrams" / "png")
+    common.ensure_dir(output_root / "html")
 
     repo_root, should_cleanup, cleanup_root = _resolve_source(source)
     try:
@@ -152,18 +172,42 @@ def run_pipeline(
         dep_payload = map_dependencies.map_dependencies(repo_root, index_payload, meta_dir)
         flow_payload = map_flows.map_flows(stack_payload, entry_payload, dep_payload, meta_dir, mode)
         coverage_payload = ingest_docs.ingest_docs(repo_root, index_payload, meta_dir, mode)
+        context_payload = explainer_context.build_explainer_context(
+            repo_root=repo_root,
+            source=source,
+            analysis_type=analysis_type,
+            out_dir=meta_dir,
+            since=since,
+            git_ref=git_ref,
+            plan_file=plan_file,
+        )
+        verification_payload = verification_checkpoint.build_verification_checkpoint(
+            output_root=output_root,
+            source=source,
+            analysis_type=analysis_type,
+            stack_payload=stack_payload,
+            index_payload=index_payload,
+            entry_payload=entry_payload,
+            dep_payload=dep_payload,
+            flow_payload=flow_payload,
+            docs_payload=coverage_payload,
+            context_payload=context_payload,
+        )
+
         enrichment_payload = enrich_external.enrich_external(source, meta_dir, enable_web_enrichment)
         llm_payload = llm_describe.generate_llm_descriptions(
             repo_root=repo_root,
             source=source,
             mode=mode,
             audience=audience,
+            analysis_type=analysis_type,
             index_payload=index_payload,
             stack_payload=stack_payload,
             entry_payload=entry_payload,
             dep_payload=dep_payload,
             flow_payload=flow_payload,
             docs_payload=coverage_payload,
+            context_payload=context_payload,
             out_dir=meta_dir,
             enabled=enable_llm_descriptions,
             ask_before_use=ask_before_llm_use,
@@ -189,6 +233,8 @@ def run_pipeline(
             mode=mode,
             audience=audience,
             overview_length=overview_length,
+            analysis_type=analysis_type,
+            output_format=output_format,
             index_payload=index_payload,
             stack_payload=stack_payload,
             entry_payload=entry_payload,
@@ -197,32 +243,74 @@ def run_pipeline(
             diagram_manifest=diagram_manifest,
             docs_payload=coverage_payload,
             llm_payload=llm_payload,
+            context_payload=context_payload,
+            verification_payload=verification_payload,
             enrichment_payload=enrichment_payload,
         )
+
+        html_payload: Dict[str, Any] = {}
+        if output_format in {"html", "both"}:
+            html_payload = generate_html.generate_html(
+                output_root=output_root,
+                source=source,
+                mode=mode,
+                audience=audience,
+                overview_length=overview_length,
+                analysis_type=analysis_type,
+                stack_payload=stack_payload,
+                index_payload=index_payload,
+                entry_payload=entry_payload,
+                dep_payload=dep_payload,
+                flow_payload=flow_payload,
+                docs_payload=coverage_payload,
+                llm_payload=llm_payload,
+                diagram_manifest=diagram_manifest,
+                context_payload=context_payload,
+                verification_payload=verification_payload,
+            )
+
         _write_confidence_and_attribution(output_root, docs_gen_payload, enrichment_payload)
+        fact_check_payload = fact_check.run_fact_check(
+            output_root=output_root,
+            output_format=output_format,
+            analysis_type=analysis_type,
+            verification_payload=verification_payload,
+        )
         _write_manifest(
             output_root=output_root,
             source=source,
             mode=mode,
             audience=audience,
             overview_length=overview_length,
+            output_format=output_format,
+            analysis_type=analysis_type,
             repo_root=repo_root,
             stack_payload=stack_payload,
             entry_payload=entry_payload,
             docs_payload=coverage_payload,
             llm_payload=llm_payload,
+            verification_payload=verification_payload,
+            html_payload=html_payload,
+            fact_check_payload=fact_check_payload,
             module_count=len(index_payload.get("modules", [])),
             diagram_count=diagram_manifest.get("count", 0),
             include_globs=include_globs,
             exclude_globs=exclude_globs,
         )
 
-        quality_payload = quality_gate.run_quality_gate(output_root, mode)
+        quality_payload = quality_gate.run_quality_gate(
+            output_root=output_root,
+            mode=mode,
+            output_format=output_format,
+            analysis_type=analysis_type,
+        )
 
         return {
             "source_root": repo_root.as_posix(),
             "output_root": output_root.as_posix(),
             "mode": mode,
+            "analysis_type": analysis_type,
+            "output_format": output_format,
             "audience": audience,
             "overview_length": overview_length,
             "file_count": index_payload.get("file_count", 0),
@@ -232,6 +320,8 @@ def run_pipeline(
             "diagram_count": diagram_manifest.get("count", 0),
             "validation_ok": validation_payload.get("overall_ok", False),
             "renderer": render_payload.get("renderer", ""),
+            "html_generated": bool(html_payload.get("output_file")),
+            "fact_check_passed": fact_check_payload.get("passed", False),
             "quality_passed": quality_payload.get("passed", False),
             "quality_errors": quality_payload.get("errors", []),
             "quality_warnings": quality_payload.get("warnings", []),
@@ -249,6 +339,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", default="standard", choices=["quick", "standard", "deep"])
     parser.add_argument("--audience", default="nontech", choices=["nontech", "mixed", "engineering"])
     parser.add_argument("--overview-length", default="medium", choices=["short", "medium", "long"])
+    parser.add_argument("--format", default="markdown", choices=["markdown", "html", "both"])
+    parser.add_argument(
+        "--explainer-type",
+        default="onboarding",
+        choices=["onboarding", "project-recap", "plan-review", "diff-review"],
+    )
+    parser.add_argument("--plan-file", default="", help="Path to plan/spec file (used by plan-review).")
+    parser.add_argument("--git-ref", default="main", help="Git ref for diff-review mode.")
+    parser.add_argument("--since", default="2 weeks ago", help="Time window for project-recap mode.")
     parser.add_argument(
         "--include-glob",
         action="append",
@@ -285,18 +384,25 @@ def main() -> int:
         mode=mode,
         audience=args.audience,
         overview_length=args.overview_length,
+        output_format=args.format,
+        analysis_type=args.explainer_type,
         enable_web_enrichment=web_enabled,
         enable_llm_descriptions=llm_enabled,
         ask_before_llm_use=ask_before_llm_use,
         prompt_for_llm_key=prompt_for_llm_key,
         include_globs=args.include_glob,
         exclude_globs=args.exclude_glob,
+        since=args.since,
+        git_ref=args.git_ref,
+        plan_file=args.plan_file,
     )
     print("Code-explainer run complete:")
     for key in [
         "source_root",
         "output_root",
         "mode",
+        "analysis_type",
+        "output_format",
         "audience",
         "overview_length",
         "file_count",
@@ -306,6 +412,8 @@ def main() -> int:
         "diagram_count",
         "validation_ok",
         "renderer",
+        "html_generated",
+        "fact_check_passed",
         "quality_passed",
     ]:
         print(f"- {key}: {summary.get(key)}")

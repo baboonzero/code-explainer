@@ -50,3 +50,22 @@ Goal: Maximum fidelity and audit-ready onboarding.
 - `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`)
 - `CODE_EXPLAINER_LLM_BASE_URL` (optional)
 - `CODE_EXPLAINER_LLM_MODEL` (optional)
+
+## Output Format
+
+- `--format markdown`: generate markdown explainers (overview + deep docs).
+- `--format html`: generate a single interactive HTML explainer page.
+- `--format both`: generate markdown + interactive HTML.
+
+## Explainer Type
+
+- `--explainer-type onboarding`: default onboarding narrative.
+- `--explainer-type project-recap`: emphasizes recent activity and mental model refresh.
+- `--explainer-type plan-review`: compares plan/spec references against actual codebase.
+- `--explainer-type diff-review`: frames explainer around code changes from `--git-ref`.
+
+Optional supporting flags:
+
+- `--since "<window>"` for `project-recap` (default: `2 weeks ago`)
+- `--plan-file <path>` for `plan-review`
+- `--git-ref <ref>` for `diff-review`

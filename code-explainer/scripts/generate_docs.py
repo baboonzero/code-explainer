@@ -328,6 +328,100 @@ def _external_context_summary(enrichment_payload: Dict[str, Any]) -> str:
     return f"External enrichment sources used: {labels}."
 
 
+def _analysis_focus_section(analysis_type: str, context_payload: Dict[str, Any]) -> str:
+    if analysis_type == "project-recap":
+        recap = context_payload.get("project_recap", {})
+        if not recap.get("available"):
+            return f"- Project recap context unavailable: {recap.get('reason', 'unknown')}"
+        lines = [
+            f"- Commit window: {recap.get('since', context_payload.get('since', 'n/a'))}",
+            f"- Commits in window: {recap.get('commit_count', 0)}",
+            f"- Contributors: {len(recap.get('contributors', []))}",
+        ]
+        top = recap.get("top_changed_files", [])
+        if top:
+            lines.append(
+                f"- Most-touched file: `{top[0]['path']}` ({top[0]['touch_count']} touches)"
+            )
+        return "\n".join(lines)
+
+    if analysis_type == "plan-review":
+        plan = context_payload.get("plan_review", {})
+        if not plan.get("available"):
+            return f"- Plan review context unavailable: {plan.get('reason', 'unknown')}"
+        lines = [
+            f"- Plan file: `{plan.get('plan_file', 'n/a')}`",
+            f"- Referenced files: {plan.get('referenced_files_count', 0)}",
+            f"- Missing referenced files: {len(plan.get('referenced_missing_files', []))}",
+            f"- Existing referenced files: {len(plan.get('referenced_existing_files', []))}",
+        ]
+        return "\n".join(lines)
+
+    if analysis_type == "diff-review":
+        diff = context_payload.get("diff_review", {})
+        if not diff.get("available"):
+            return f"- Diff context unavailable: {diff.get('reason', 'unknown')}"
+        lines = [
+            f"- Compared against ref: `{diff.get('git_ref', 'n/a')}`",
+            f"- Changed files: {diff.get('changed_file_count', 0)}",
+            f"- Added/Modified/Deleted: {diff.get('added_files', 0)}/{diff.get('modified_files', 0)}/{diff.get('deleted_files', 0)}",
+        ]
+        return "\n".join(lines)
+
+    highlights = context_payload.get("highlights", [])
+    if highlights:
+        return "\n".join([f"- {item}" for item in highlights[:6]])
+    return "- Onboarding mode focuses on system purpose, module boundaries, and critical flows."
+
+
+def _mode_specific_context_block(analysis_type: str, context_payload: Dict[str, Any]) -> str:
+    if analysis_type == "project-recap":
+        recap = context_payload.get("project_recap", {})
+        if not recap.get("available"):
+            return f"- {recap.get('reason', 'Project recap context unavailable.')}"
+        lines = ["### Recent Activity Snapshot"]
+        for commit in recap.get("commit_sample", [])[:8]:
+            lines.append(f"- `{commit}`")
+        return "\n".join(lines)
+    if analysis_type == "plan-review":
+        plan = context_payload.get("plan_review", {})
+        if not plan.get("available"):
+            return f"- {plan.get('reason', 'Plan review context unavailable.')}"
+        lines = ["### Plan File Coverage", f"- Plan file: `{plan.get('plan_file', 'n/a')}`"]
+        missing = plan.get("referenced_missing_files", [])[:10]
+        if missing:
+            lines.append("- Missing referenced files:")
+            for item in missing:
+                lines.append(f"  - `{item}`")
+        else:
+            lines.append("- No missing referenced files detected.")
+        return "\n".join(lines)
+    if analysis_type == "diff-review":
+        diff = context_payload.get("diff_review", {})
+        if not diff.get("available"):
+            return f"- {diff.get('reason', 'Diff context unavailable.')}"
+        lines = ["### Diff Snapshot"]
+        for row in diff.get("name_status_sample", [])[:12]:
+            lines.append(f"- `{row.get('status', '?')}` `{row.get('path', '')}`")
+        return "\n".join(lines)
+    return "- Standard onboarding context."
+
+
+def _apply_verification_evidence(claims: List[Dict[str, Any]], verification_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    facts = verification_payload.get("facts", [])
+    fact_by_id = {fact.get("claim_id", ""): fact for fact in facts}
+    for claim in claims:
+        claim_id = claim.get("claim_id", "")
+        fact = fact_by_id.get(claim_id)
+        if not fact:
+            continue
+        locations = fact.get("evidence_locations", [])
+        if locations:
+            claim["evidence_locations"] = locations
+        claim["verification_status"] = fact.get("status", "")
+    return claims
+
+
 def generate_docs(
     output_root: Path,
     templates_root: Path,
@@ -335,6 +429,8 @@ def generate_docs(
     mode: str,
     audience: str,
     overview_length: str,
+    analysis_type: str,
+    output_format: str,
     index_payload: Dict[str, Any],
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
@@ -343,6 +439,8 @@ def generate_docs(
     diagram_manifest: Dict[str, Any],
     docs_payload: Dict[str, Any],
     llm_payload: Dict[str, Any],
+    context_payload: Dict[str, Any],
+    verification_payload: Dict[str, Any],
     enrichment_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     overview_dir = common.ensure_dir(output_root / "overview")
@@ -364,6 +462,7 @@ def generate_docs(
         "repo_name": repo_name,
         "source": source,
         "mode": mode,
+        "analysis_type": analysis_type,
         "audience": audience,
         "overview_length": overview_length,
         "generated_at": common.now_iso(),
@@ -386,6 +485,8 @@ def generate_docs(
         "docs_quick_links": _docs_summary(docs_payload, profile["doc_link_limit"]),
         "primary_user_flow_summary": _primary_flow_summary(flow_payload),
         "external_context_summary": _external_context_summary(enrichment_payload),
+        "analysis_focus_section": _analysis_focus_section(analysis_type, context_payload),
+        "mode_specific_context": _mode_specific_context_block(analysis_type, context_payload),
         "directory_plain_summaries": _llm_directory_summaries(llm_payload, modules, limit=profile["module_limit"]),
         "llm_deep_dive_starters": _llm_deep_dive_starters(llm_payload),
         "llm_confidence_notes": _llm_confidence_notes(llm_payload),
@@ -416,6 +517,10 @@ Generated at: {common.now_iso()}
 
 {_dep_section(dep_payload)}
 
+## Explainer Focus
+
+{_analysis_focus_section(analysis_type, context_payload)}
+
 ## Internal Dependency Footprint
 
 - Internal edge count: **{dep_payload.get('internal_edge_count', 0)}**
@@ -427,13 +532,14 @@ Generated at: {common.now_iso()}
 - Prioritize auth, networking, and serialization packages for security review.
 - Confirm lockfile hygiene and reproducible installs for onboarding reliability.
 """
-
-    (overview_dir / "OVERVIEW.md").write_text(overview_text, encoding="utf-8")
-    (deep_dir / "ARCHITECTURE_DEEP.md").write_text(arch_text, encoding="utf-8")
-    (deep_dir / "MODULES_DEEP.md").write_text(modules_text, encoding="utf-8")
-    (deep_dir / "FLOWS_DEEP.md").write_text(flows_text, encoding="utf-8")
-    (deep_dir / "DEPENDENCIES_DEEP.md").write_text(dependencies_deep, encoding="utf-8")
-    (deep_dir / "GLOSSARY.md").write_text(glossary_text, encoding="utf-8")
+    wrote_markdown = output_format in {"markdown", "both"}
+    if wrote_markdown:
+        (overview_dir / "OVERVIEW.md").write_text(overview_text, encoding="utf-8")
+        (deep_dir / "ARCHITECTURE_DEEP.md").write_text(arch_text, encoding="utf-8")
+        (deep_dir / "MODULES_DEEP.md").write_text(modules_text, encoding="utf-8")
+        (deep_dir / "FLOWS_DEEP.md").write_text(flows_text, encoding="utf-8")
+        (deep_dir / "DEPENDENCIES_DEEP.md").write_text(dependencies_deep, encoding="utf-8")
+        (deep_dir / "GLOSSARY.md").write_text(glossary_text, encoding="utf-8")
 
     claims = [
         common.collect_claim(
@@ -471,6 +577,13 @@ Generated at: {common.now_iso()}
             0.95,
             "Deterministic diagram build output",
         ),
+        common.collect_claim(
+            "claim_analysis_type",
+            f"Explainer mode is {analysis_type}.",
+            ["meta/explainer_context.json"],
+            0.93,
+            "Based on explicit CLI selection and generated context artifact.",
+        ),
     ]
 
     if llm_payload.get("used", False):
@@ -495,16 +608,21 @@ Generated at: {common.now_iso()}
             )
         )
 
+    claims = _apply_verification_evidence(claims, verification_payload)
+
     payload = {
         "generated_at": common.now_iso(),
-        "overview_file": "overview/OVERVIEW.md",
+        "overview_file": "overview/OVERVIEW.md" if wrote_markdown else "",
         "deep_files": [
             "deep/ARCHITECTURE_DEEP.md",
             "deep/MODULES_DEEP.md",
             "deep/FLOWS_DEEP.md",
             "deep/DEPENDENCIES_DEEP.md",
             "deep/GLOSSARY.md",
-        ],
+        ] if wrote_markdown else [],
+        "output_format": output_format,
+        "analysis_type": analysis_type,
+        "wrote_markdown": wrote_markdown,
         "audience": audience,
         "mode": mode,
         "overview_length": overview_length,
@@ -522,6 +640,8 @@ def main() -> int:
     parser.add_argument("--mode", default="standard")
     parser.add_argument("--audience", default="nontech")
     parser.add_argument("--overview-length", default="medium", choices=["short", "medium", "long"])
+    parser.add_argument("--analysis-type", default="onboarding")
+    parser.add_argument("--output-format", default="markdown")
     parser.add_argument("--index", required=True)
     parser.add_argument("--stack", required=True)
     parser.add_argument("--entrypoints", required=True)
@@ -530,6 +650,8 @@ def main() -> int:
     parser.add_argument("--diagram-manifest", required=True)
     parser.add_argument("--coverage", required=True)
     parser.add_argument("--llm-summary", required=True)
+    parser.add_argument("--explainer-context", required=True)
+    parser.add_argument("--verification", required=True)
     parser.add_argument("--enrichment", required=True)
     args = parser.parse_args()
 
@@ -540,6 +662,8 @@ def main() -> int:
         mode=common.normalize_mode(args.mode),
         audience=args.audience,
         overview_length=args.overview_length,
+        analysis_type=args.analysis_type,
+        output_format=args.output_format,
         index_payload=common.read_json(Path(args.index), default={}),
         stack_payload=common.read_json(Path(args.stack), default={}),
         entry_payload=common.read_json(Path(args.entrypoints), default={}),
@@ -548,6 +672,8 @@ def main() -> int:
         diagram_manifest=common.read_json(Path(args.diagram_manifest), default={}),
         docs_payload=common.read_json(Path(args.coverage), default={}),
         llm_payload=common.read_json(Path(args.llm_summary), default={}),
+        context_payload=common.read_json(Path(args.explainer_context), default={}),
+        verification_payload=common.read_json(Path(args.verification), default={}),
         enrichment_payload=common.read_json(Path(args.enrichment), default={}),
     )
     print(json.dumps({"overview": payload["overview_file"], "deep_count": len(payload["deep_files"])}, indent=2))
