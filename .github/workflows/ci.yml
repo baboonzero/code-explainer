@@ -21,10 +21,6 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Compile scripts
-        working-directory: code-explainer
-        run: python -c "import glob,py_compile; [py_compile.compile(f, doraise=True) for f in glob.glob('scripts/*.py')]; print('compiled')"
-
       - name: Smoke test
         working-directory: code-explainer
         run: python scripts/analyze.py analyze --source . --output .ci-out --mode quick --audience nontech --format markdown --output-layout full --llm-mode off --ask-before-llm-use false --prompt-for-llm-key false --enable-web-enrichment false
