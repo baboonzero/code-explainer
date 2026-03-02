@@ -135,13 +135,13 @@ def _diagram_cards(diagram_manifest: Dict[str, Any]) -> str:
   <div class="diagram-head">
     <h3>{_escape(title)}</h3>
     <div class="diagram-actions">
-      <button class="btn-open" data-title="{_escape(title)}" data-src="{_escape(png_src)}" data-fallback="{_escape(svg_src)}" type="button">Open Full Screen</button>
+      <button class="btn-open" data-title="{_escape(title)}" data-src="{_escape(svg_src)}" data-fallback="{_escape(png_src)}" type="button">Open Full Screen</button>
       <a href="{_escape(svg_src)}" target="_blank" rel="noopener">SVG</a>
       <a href="{_escape(png_src)}" target="_blank" rel="noopener">PNG</a>
     </div>
   </div>
   <div class="diagram-frame">
-    <img class="diagram-preview" src="{_escape(png_src)}" data-fallback="{_escape(svg_src)}" alt="{_escape(title)} diagram" loading="lazy" />
+    <img class="diagram-preview" src="{_escape(svg_src)}" data-fallback="{_escape(png_src)}" alt="{_escape(title)} diagram" loading="lazy" />
   </div>
 </article>
 """
@@ -403,7 +403,7 @@ def generate_html(
     }}
     .diagram-grid {{
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, minmax(0,1fr));
       gap: 14px;
     }}
     .diagram-card {{
@@ -449,7 +449,7 @@ def generate_html(
       border: 1px solid var(--line);
       border-radius: 10px;
       background: #ffffff;
-      min-height: 300px;
+      height: 340px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -457,10 +457,10 @@ def generate_html(
       padding: 8px;
     }}
     .diagram-preview {{
-      width: min(100%, 980px);
       max-width: 100%;
+      max-height: 100%;
+      width: auto;
       height: auto;
-      max-height: 420px;
       display: block;
       cursor: zoom-in;
     }}
@@ -514,8 +514,9 @@ def generate_html(
     @media (max-width: 1080px) {{
       .layout {{ grid-template-columns: 1fr; }}
       .toc {{ position: static; }}
+      .diagram-grid {{ grid-template-columns: 1fr; }}
       .grid2 {{ grid-template-columns: 1fr; }}
-      .diagram-preview {{ width: min(100%, 760px); max-height: 360px; }}
+      .diagram-frame {{ height: 300px; }}
       .lightbox-img {{ min-width: 640px; }}
     }}
   </style>

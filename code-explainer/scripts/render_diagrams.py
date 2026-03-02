@@ -49,19 +49,19 @@ def render_diagrams(diagrams_dir: Path, output_dir: Path, theme: str = "neutral"
         config_payload = {
             "themeVariables": {
                 "fontFamily": "IBM Plex Sans, Segoe UI, Arial",
-                "fontSize": "20px",
+                "fontSize": "16px",
                 "lineColor": "#334155",
                 "primaryTextColor": "#111827",
                 "primaryBorderColor": "#334155",
                 "primaryColor": "#f8fafc",
             },
-            "flowchart": {"nodeSpacing": 70, "rankSpacing": 100, "curve": "basis"},
+            "flowchart": {"nodeSpacing": 55, "rankSpacing": 75, "curve": "basis"},
             "sequence": {
-                "diagramMarginX": 60,
-                "diagramMarginY": 30,
-                "actorMargin": 90,
-                "width": 220,
-                "height": 90,
+                "diagramMarginX": 40,
+                "diagramMarginY": 24,
+                "actorMargin": 70,
+                "width": 180,
+                "height": 76,
             },
         }
         Path(config_path).write_text(json.dumps(config_payload), encoding="utf-8")
@@ -73,8 +73,8 @@ def render_diagrams(diagrams_dir: Path, output_dir: Path, theme: str = "neutral"
             entry = {"diagram": mmd_path.name, "svg": svg_path.name, "png": png_path.name, "renderer": "", "ok": True, "errors": []}
             if mmdc:
                 # White background + larger default typography/layout for cleaner onboarding visuals.
-                svg_cmd = [mmdc, "-i", str(mmd_path), "-o", str(svg_path), "-t", theme, "-b", "white", "-s", "2", "-C", config_path]
-                png_cmd = [mmdc, "-i", str(mmd_path), "-o", str(png_path), "-t", theme, "-b", "white", "-w", "3200", "-H", "2200", "-s", "2", "-C", config_path]
+                svg_cmd = [mmdc, "-i", str(mmd_path), "-o", str(svg_path), "-t", theme, "-b", "white", "-s", "1.4", "-C", config_path]
+                png_cmd = [mmdc, "-i", str(mmd_path), "-o", str(png_path), "-t", theme, "-b", "white", "-w", "2200", "-H", "1500", "-s", "1.4", "-C", config_path]
                 code_svg, _out_svg, err_svg = common.run_cmd(svg_cmd, timeout=90)
                 code_png, _out_png, err_png = common.run_cmd(png_cmd, timeout=90)
                 entry["renderer"] = "mmdc"
