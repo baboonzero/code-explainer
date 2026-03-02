@@ -17,10 +17,10 @@ Builds onboarding-grade repository explainers from local or GitHub sources.
 
 Compact-first output + detailed artifacts:
 
-1. Compact entry files (default): `START_HERE.md`, `DEEP_DIVE.md`, `ONBOARDING.html`.
-2. Detailed artifacts under `_details/` in compact layout.
+1. Compact entry files (default): `START_HERE.md`, `SYSTEM_DEEP_DIVE.md`, `ONBOARDING.html`.
+2. Detailed artifacts under `evidence/` in compact layout.
 3. Optional full layout writes docs/diagrams/meta directly under output root.
-4. Detailed docs include `overview/OVERVIEW.md` and `deep/*.md`.
+4. Detailed docs include `overview/OVERVIEW.md` and `deep/SYSTEM_DEEP_DIVE.md`.
 5. Diagrams include `.mmd`, `.svg`, and `.png`.
 6. Metadata includes quality, confidence, attribution, verification, and fact-check reports.
 

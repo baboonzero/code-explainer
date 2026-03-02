@@ -10,46 +10,42 @@
 Written under `<output>/`:
 
 1. `START_HERE.md`
-2. `DEEP_DIVE.md`
+2. `SYSTEM_DEEP_DIVE.md`
 3. `ONBOARDING.html` (when `--format html|both`)
-4. `_details/` containing the full artifact tree listed below
+4. `evidence/` containing the full artifact tree listed below
 
 ## Full Layout
 
 Written directly under `<output>/`:
 
 1. `overview/OVERVIEW.md` (when `--format markdown|both`)
-2. `deep/ARCHITECTURE_DEEP.md` (when `--format markdown|both`)
-3. `deep/MODULES_DEEP.md` (when `--format markdown|both`)
-4. `deep/FLOWS_DEEP.md` (when `--format markdown|both`)
-5. `deep/DEPENDENCIES_DEEP.md` (when `--format markdown|both`)
-6. `deep/GLOSSARY.md` (when `--format markdown|both`)
-7. `html/ONBOARDING.html` (when `--format html|both`)
-8. `diagrams/*.mmd`
-9. `diagrams/svg/*.svg`
-10. `diagrams/png/*.png`
-11. `meta/analysis_manifest.json`
-12. `meta/confidence_report.json`
-13. `meta/source_attribution.json`
-14. `meta/index.json`
-15. `meta/stack.json`
-16. `meta/entrypoints.json`
-17. `meta/dependencies.json`
-18. `meta/flows.json`
-19. `meta/diagram_manifest.json`
-20. `meta/mermaid_validation.json`
-21. `meta/render_report.json`
-22. `meta/enrichment.json`
-23. `meta/coverage_report.json`
-24. `meta/explainer_context.json`
-25. `meta/verification_checkpoint.json`
-26. `meta/llm_summary.json`
-27. `meta/docs_generation.json`
-28. `meta/html_generation.json` (when `--format html|both`)
-29. `meta/fact_check_report.json`
-30. `meta/content_completeness.json`
-31. `meta/quality_report.json`
-32. `meta/compact_output.json` (when `--output-layout compact`)
+2. `deep/SYSTEM_DEEP_DIVE.md` (when `--format markdown|both`)
+3. `html/ONBOARDING.html` (when `--format html|both`)
+4. `diagrams/*.mmd`
+5. `diagrams/svg/*.svg`
+6. `diagrams/png/*.png`
+7. `meta/analysis_manifest.json`
+8. `meta/confidence_report.json`
+9. `meta/source_attribution.json`
+10. `meta/index.json`
+11. `meta/stack.json`
+12. `meta/entrypoints.json`
+13. `meta/dependencies.json`
+14. `meta/flows.json`
+15. `meta/diagram_manifest.json`
+16. `meta/mermaid_validation.json`
+17. `meta/render_report.json`
+18. `meta/enrichment.json`
+19. `meta/coverage_report.json`
+20. `meta/explainer_context.json`
+21. `meta/verification_checkpoint.json`
+22. `meta/llm_summary.json`
+23. `meta/docs_generation.json`
+24. `meta/html_generation.json` (when `--format html|both`)
+25. `meta/fact_check_report.json`
+26. `meta/content_completeness.json`
+27. `meta/quality_report.json`
+28. `meta/compact_output.json` (when `--output-layout compact`)
 
 ## Manifest Schema
 

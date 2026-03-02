@@ -18,11 +18,7 @@ import common
 def _load_markdown_corpus(output_root: Path) -> str:
     paths = [
         output_root / "overview" / "OVERVIEW.md",
-        output_root / "deep" / "ARCHITECTURE_DEEP.md",
-        output_root / "deep" / "MODULES_DEEP.md",
-        output_root / "deep" / "FLOWS_DEEP.md",
-        output_root / "deep" / "DEPENDENCIES_DEEP.md",
-        output_root / "deep" / "GLOSSARY.md",
+        output_root / "deep" / "SYSTEM_DEEP_DIVE.md",
     ]
     chunks: List[str] = []
     for path in paths:

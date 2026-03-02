@@ -213,9 +213,40 @@ def top_level_modules(files: Iterable[Dict[str, Any]], max_items: int = 60) -> L
         if len(buckets[top]["examples"]) < 10:
             buckets[top]["examples"].append(path)
 
-    ranked = sorted(
-        buckets.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True
-    )
+    ranked = sorted(buckets.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True)
+
+    # If one wrapper directory dominates the repo, expose its second-level modules.
+    non_root_file_count = sum(int(m["file_count"]) for m in ranked)
+    if ranked and non_root_file_count > 0:
+        dominant = ranked[0]
+        dominant_ratio = dominant["file_count"] / max(non_root_file_count, 1)
+        if dominant_ratio >= 0.7:
+            dominant_name = str(dominant["name"])
+            nested: Dict[str, Dict[str, Any]] = {}
+            for item in files:
+                path = item["path"]
+                if not path.startswith(f"{dominant_name}/"):
+                    continue
+                parts = path.split("/")
+                if len(parts) < 3:
+                    continue
+                nested_name = parts[1]
+                if nested_name not in nested:
+                    nested[nested_name] = {
+                        "name": nested_name,
+                        "type": "directory",
+                        "file_count": 0,
+                        "total_bytes": 0,
+                        "examples": [],
+                    }
+                nested[nested_name]["file_count"] += 1
+                nested[nested_name]["total_bytes"] += int(item.get("size_bytes", 0))
+                if len(nested[nested_name]["examples"]) < 10:
+                    nested[nested_name]["examples"].append(path)
+            if len(nested) >= 2:
+                nested_ranked = sorted(nested.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True)
+                others = [m for m in ranked[1:]]
+                ranked = nested_ranked + others
     if root_files["file_count"] > 0:
         ranked.append(root_files)
     return ranked[:max_items]
@@ -278,7 +309,10 @@ def detect_architecture_pattern(repo_root: Path) -> str:
 def _looks_like_python_entrypoint(path: str, text: str) -> Optional[str]:
     lowered = text.lower()
     if "__name__" in text and "__main__" in text:
-        return "Python main guard"
+        has_main = bool(re.search(r"^\s*def\s+main\s*\(", text, flags=re.MULTILINE))
+        has_cli_signal = any(token in lowered for token in ["argparse", "click.", "typer.", "add_argument("])
+        if has_main or has_cli_signal or Path(path).name.lower() in {"main.py", "app.py", "server.py", "cli.py", "run.py", "analyze.py"}:
+            return "Python main guard"
     if re.search(r"^\s*(app|application)\s*=\s*FastAPI\(", text, flags=re.MULTILINE):
         return "FastAPI app bootstrap"
     if re.search(r"^\s*if\s+__name__\s*==\s*[\"']__main__[\"']\s*:", text, flags=re.MULTILINE):

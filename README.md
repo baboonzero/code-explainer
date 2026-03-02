@@ -6,9 +6,9 @@ Outputs include:
 
 - Compact entry files by default:
 - `START_HERE.md`
-- `DEEP_DIVE.md`
+- `SYSTEM_DEEP_DIVE.md`
 - `ONBOARDING.html`
-- Detailed artifacts under `_details/`:
+- Detailed artifacts under `evidence/`:
 - overview/deep markdown docs
 - diagrams (`.mmd`, `svg`, `png`)
 - metadata reports (`meta/*.json`)

@@ -100,9 +100,9 @@ def build_verification_checkpoint(
         ),
         _fact(
             "claim_architecture",
-            f"Detected architecture pattern is {architecture_pattern}.",
-            f"Detected architecture pattern is {architecture_pattern}.",
-            [architecture_pattern.lower()],
+            f"Detected project layout pattern is {architecture_pattern}.",
+            f"Detected project layout pattern is {architecture_pattern}.",
+            ["project", "layout"],
             [_location(stack_path, output_root, "architecture_pattern")],
         ),
         _fact(

@@ -14,27 +14,34 @@ if str(SCRIPT_DIR) not in sys.path:
 import common
 
 
-def _extract_section(markdown_text: str, heading: str) -> str:
+def _section(markdown_text: str, heading: str) -> str:
     if not markdown_text.strip():
         return ""
     pattern = rf"^##\s+{re.escape(heading)}\s*$([\s\S]*?)(?=^##\s+|\Z)"
     match = re.search(pattern, markdown_text, flags=re.MULTILINE)
-    if not match:
-        return ""
-    return match.group(1).strip()
+    return match.group(1).strip() if match else ""
 
 
-def _copy_html_for_compact(artifact_root: Path, output_root: Path) -> str:
+def _rewrite_links(text: str, details_dir: str) -> str:
+    return (
+        text.replace("../diagrams/", f"{details_dir}/diagrams/")
+        .replace("../meta/", f"{details_dir}/meta/")
+        .replace("../overview/", f"{details_dir}/overview/")
+        .replace("../deep/", f"{details_dir}/deep/")
+    )
+
+
+def _copy_html_for_compact(artifact_root: Path, output_root: Path, details_dir: str) -> str:
     html_src = artifact_root / "html" / "ONBOARDING.html"
     if not html_src.exists():
         return ""
     html_text = common.read_text(html_src)
     if not html_text.strip():
         return ""
-    # Keep links usable from compact root layout.
-    html_text = html_text.replace("../diagrams/", "_details/diagrams/")
-    html_text = html_text.replace("../deep/", "_details/deep/")
-    html_text = html_text.replace("../overview/", "_details/overview/")
+    html_text = html_text.replace("../diagrams/", f"{details_dir}/diagrams/")
+    html_text = html_text.replace("../deep/", f"{details_dir}/deep/")
+    html_text = html_text.replace("../overview/", f"{details_dir}/overview/")
+    html_text = html_text.replace("../meta/", f"{details_dir}/meta/")
     html_dst = output_root / "ONBOARDING.html"
     html_dst.write_text(html_text, encoding="utf-8")
     return "ONBOARDING.html"
@@ -42,88 +49,70 @@ def _copy_html_for_compact(artifact_root: Path, output_root: Path) -> str:
 
 def build_compact_output(output_root: Path, artifact_root: Path, source: str, analysis_type: str) -> Dict[str, Any]:
     output_root = common.ensure_dir(output_root)
+    details_dir = artifact_root.name
 
     overview_text = common.read_text(artifact_root / "overview" / "OVERVIEW.md")
-    what_section = _extract_section(overview_text, "What This System Is")
-    map_section = _extract_section(overview_text, "Directory Map (Plain Language)")
-    start_steps = _extract_section(overview_text, "If You Are PM / Designer / New Engineer, Start Here")
-    if start_steps:
-        start_steps = start_steps.replace("../diagrams/", "_details/diagrams/")
-        start_steps = start_steps.replace("meta/", "_details/meta/")
+    deep_text = common.read_text(artifact_root / "deep" / "SYSTEM_DEEP_DIVE.md")
+    summary = _section(overview_text, "What This Repository Does") or overview_text[:700]
+    fast_path = _section(overview_text, "If You Are New, Start Here")
+    fast_path = _rewrite_links(fast_path, details_dir) if fast_path else ""
+    lifecycle_match = re.search(r"`([^`]+)`", deep_text)
+    lifecycle = lifecycle_match.group(1) if lifecycle_match else ""
 
-    html_file = _copy_html_for_compact(artifact_root, output_root)
+    html_file = _copy_html_for_compact(artifact_root, output_root, details_dir)
 
-    deep_doc_paths = [
-        "_details/deep/ARCHITECTURE_DEEP.md",
-        "_details/deep/MODULES_DEEP.md",
-        "_details/deep/FLOWS_DEEP.md",
-        "_details/deep/DEPENDENCIES_DEEP.md",
-        "_details/deep/GLOSSARY.md",
-    ]
-    deep_links = "\n".join([f"- `{path}`" for path in deep_doc_paths])
+    start_here_text = f"""# START HERE
 
-    start_here = f"""# Start Here
+This folder is intentionally simple.
 
-This output is intentionally compact for fast onboarding.
+Open these files in order:
 
-Open these files first:
-
-1. `ONBOARDING.html` (interactive explainer){"" if html_file else " - not generated in this run"}
-2. `START_HERE.md` (this quick orientation)
-3. `DEEP_DIVE.md` (where to go next)
+1. `START_HERE.md`
+2. `SYSTEM_DEEP_DIVE.md`
+3. `ONBOARDING.html`{" (generated)" if html_file else " (not generated in this run)"}
 
 Source analyzed: `{source}`
 Explainer type: `{analysis_type}`
 
-## What This Repository Does (Plain Language)
+## What This Repository Does
 
-{what_section or "Open `_details/overview/OVERVIEW.md` for the full overview."}
+{summary or "See the deep dive for full details."}
 
-## Key Project Areas
+## One-Line Flow
 
-{map_section or "Open `_details/overview/OVERVIEW.md` for the module map."}
+`{lifecycle or "Repository intake -> Analysis -> Explainers + Diagrams"}`
 
-## Fast Onboarding Path
+## Suggested Reading Path
 
-{start_steps or "1. Open ONBOARDING.html\n2. Review architecture and flows in DEEP_DIVE.md\n3. Use _details for supporting evidence"}
+{fast_path or "1. Skim this file\n2. Open SYSTEM_DEEP_DIVE.md\n3. Use diagrams and HTML for visual orientation."}
 
-## Full Evidence and Artifacts
+## Evidence Folder
 
-All detailed outputs are in `_details/` to keep this root folder simple.
+All supporting artifacts are in `{details_dir}/`:
+
+- `{details_dir}/overview/OVERVIEW.md`
+- `{details_dir}/deep/SYSTEM_DEEP_DIVE.md`
+- `{details_dir}/diagrams/` (Mermaid + SVG + PNG)
+- `{details_dir}/meta/` (quality, confidence, and coverage reports)
 """
-    (output_root / "START_HERE.md").write_text(start_here.strip() + "\n", encoding="utf-8")
+    (output_root / "START_HERE.md").write_text(start_here_text.strip() + "\n", encoding="utf-8")
 
-    deep_dive = f"""# Deep Dive
-
-Use this file when you want technical depth after reading `START_HERE.md`.
-
-Recommended order:
-
-1. `_details/deep/ARCHITECTURE_DEEP.md`
-2. `_details/deep/FLOWS_DEEP.md`
-3. `_details/deep/MODULES_DEEP.md`
-4. `_details/deep/DEPENDENCIES_DEEP.md`
-5. `_details/deep/GLOSSARY.md`
-
-Detailed docs:
-
-{deep_links}
-
-Diagram assets:
-
-- `_details/diagrams/svg/`
-- `_details/diagrams/png/`
-- `_details/diagrams/*.mmd`
-"""
-    (output_root / "DEEP_DIVE.md").write_text(deep_dive.strip() + "\n", encoding="utf-8")
+    system_deep_dive = _rewrite_links(deep_text, details_dir).strip()
+    if not system_deep_dive:
+        system_deep_dive = (
+            "# System Deep Dive\n\n"
+            "Deep dive content was not generated in this run. Check quality reports under "
+            f"`{details_dir}/meta/quality_report.json`."
+        )
+    (output_root / "SYSTEM_DEEP_DIVE.md").write_text(system_deep_dive + "\n", encoding="utf-8")
 
     payload = {
         "generated_at": common.now_iso(),
         "output_layout": "compact",
-        "details_dir": "_details",
+        "details_dir": details_dir,
         "entry_files": [
             "START_HERE.md",
-            "DEEP_DIVE.md",
+            "SYSTEM_DEEP_DIVE.md",
             html_file or "",
         ],
     }

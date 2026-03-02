@@ -32,11 +32,7 @@ def _required_outputs_for_format(output_format: str) -> List[str]:
         outputs.extend(
             [
                 "overview/OVERVIEW.md",
-                "deep/ARCHITECTURE_DEEP.md",
-                "deep/MODULES_DEEP.md",
-                "deep/FLOWS_DEEP.md",
-                "deep/DEPENDENCIES_DEEP.md",
-                "deep/GLOSSARY.md",
+                "deep/SYSTEM_DEEP_DIVE.md",
             ]
         )
     if output_format in {"html", "both"}:
@@ -88,11 +84,7 @@ def _build_content_corpus(output_root: Path, output_format: str) -> str:
     if output_format in {"markdown", "both"}:
         for rel in [
             "overview/OVERVIEW.md",
-            "deep/ARCHITECTURE_DEEP.md",
-            "deep/MODULES_DEEP.md",
-            "deep/FLOWS_DEEP.md",
-            "deep/DEPENDENCIES_DEEP.md",
-            "deep/GLOSSARY.md",
+            "deep/SYSTEM_DEEP_DIVE.md",
         ]:
             text = common.read_text(output_root / rel)
             if text:
@@ -181,14 +173,14 @@ def _check_semantic_quality(
     if output_format in {"markdown", "both"}:
         overview_text = common.read_text(output_root / "overview" / "OVERVIEW.md").lower()
         generic_markers = [
-            "user goal",
-            "need context?",
-            "service layer",
-            "data layer",
+            "module_a",
+            "module_b",
+            "user intent",
             "core module",
+            "persistence/state",
         ]
         generic_hits = [marker for marker in generic_markers if marker in overview_text]
-        if len(generic_hits) >= 3:
+        if len(generic_hits) >= 2:
             warnings.append(
                 "Overview appears overly generic (placeholder-like phrases detected); consider deeper mode or tighter include-glob filters."
             )
@@ -282,6 +274,9 @@ def run_quality_gate(
     validation = common.read_json(output_root / "meta" / "mermaid_validation.json", default={})
     if validation and not validation.get("overall_ok", False):
         errors.append("Mermaid validation failed for one or more diagrams.")
+    render_report = common.read_json(output_root / "meta" / "render_report.json", default={})
+    if render_report and render_report.get("renderer") == "fallback":
+        errors.append("Diagram rendering used fallback renderer (mmdc unavailable); output quality is not acceptable.")
 
     confidence = common.read_json(output_root / "meta" / "confidence_report.json", default={"claims": []})
     attribution = common.read_json(output_root / "meta" / "source_attribution.json", default={"attributions": []})

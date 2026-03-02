@@ -64,7 +64,7 @@ Goal: Maximum fidelity and audit-ready onboarding.
 
 ## Output Layout
 
-- `--output-layout compact`: default. Produces a minimal root with `START_HERE.md`, `DEEP_DIVE.md`, `ONBOARDING.html`, and stores full artifacts in `_details/`.
+- `--output-layout compact`: default. Produces a minimal root with `START_HERE.md`, `SYSTEM_DEEP_DIVE.md`, `ONBOARDING.html`, and stores full artifacts in `evidence/`.
 - `--output-layout full`: writes the full docs/diagrams/meta tree directly under output root.
 - If `--output` is omitted:
 - Local source: output goes to `<source>/code-explainer-output`.

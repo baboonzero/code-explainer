@@ -43,24 +43,34 @@ def _is_doc_candidate(path: str) -> bool:
 
 
 def _extract_summary(text: str, max_chars: int) -> str:
-    cleaned_lines: List[str] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
+    cleaned = re.sub(r"```[\s\S]*?```", " ", text)
+    cleaned = re.sub(r"<!--[\s\S]*?-->", " ", cleaned)
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", cleaned) if b.strip()]
+    candidates: List[str] = []
+    for block in blocks:
+        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+        if not lines:
             continue
-        if stripped.startswith(("#", "```", "<!--", "|", "-", "*", ">")):
+        if lines[0].startswith("#"):
             continue
-        if re.match(r"^\d+\.\s+", stripped):
+        if all(
+            ln.startswith(("-", "*", ">", "|")) or re.match(r"^\d+\.\s+", ln)
+            for ln in lines
+        ):
             continue
-        cleaned_lines.append(stripped)
-        if len(" ".join(cleaned_lines)) >= max_chars:
-            break
-    if not cleaned_lines:
+        paragraph = " ".join(lines)
+        paragraph = re.sub(r"`([^`]+)`", r"\1", paragraph)
+        paragraph = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", paragraph)
+        paragraph = re.sub(r"\s+", " ", paragraph).strip()
+        if len(paragraph) < 60:
+            continue
+        candidates.append(paragraph)
+    if not candidates:
         return ""
-    joined = " ".join(cleaned_lines)
-    if len(joined) > max_chars:
-        joined = joined[: max_chars - 1].rstrip() + "..."
-    return joined
+    summary = candidates[0]
+    if len(summary) > max_chars:
+        summary = summary[: max_chars - 1].rstrip() + "..."
+    return summary
 
 
 def _extract_headings(text: str, limit: int = 8) -> List[str]:

@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 
 # Skill local outputs
+.out*/
+code-explainer-output/
 code-explainer/.out*/
 code-explainer/.out-gh/
 code-explainer/.ci-out/

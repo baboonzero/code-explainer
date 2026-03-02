@@ -196,20 +196,20 @@ def run_pipeline(
         output_layout = (output_layout or "compact").strip().lower()
         if output_layout not in {"compact", "full"}:
             output_layout = "compact"
-        artifact_root = output_root if output_layout == "full" else output_root / "_details"
+        artifact_root = output_root if output_layout == "full" else output_root / "evidence"
 
         if output_layout == "compact":
             _clear_generated_paths(
                 output_root,
                 [
-                    "_details",
+                    "evidence",
                     "meta",
                     "overview",
                     "deep",
                     "diagrams",
                     "html",
                     "START_HERE.md",
-                    "DEEP_DIVE.md",
+                    "SYSTEM_DEEP_DIVE.md",
                     "ONBOARDING.html",
                 ],
             )
@@ -242,7 +242,7 @@ def run_pipeline(
         stack_payload = detect_stack.analyze_stack(repo_root, index_payload, meta_dir)
         entry_payload = map_entrypoints.map_entrypoints(index_payload, repo_root, meta_dir)
         dep_payload = map_dependencies.map_dependencies(repo_root, index_payload, meta_dir)
-        flow_payload = map_flows.map_flows(stack_payload, entry_payload, dep_payload, meta_dir, mode)
+        flow_payload = map_flows.map_flows(repo_root, stack_payload, entry_payload, dep_payload, meta_dir, mode)
         coverage_payload = ingest_docs.ingest_docs(repo_root, index_payload, meta_dir, mode)
         context_payload = explainer_context.build_explainer_context(
             repo_root=repo_root,
