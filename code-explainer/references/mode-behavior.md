@@ -62,6 +62,14 @@ Goal: Maximum fidelity and audit-ready onboarding.
 - `--format both`: generate markdown + interactive HTML.
 - Default format is `both`.
 
+## Output Layout
+
+- `--output-layout compact`: default. Produces a minimal root with `START_HERE.md`, `DEEP_DIVE.md`, `ONBOARDING.html`, and stores full artifacts in `_details/`.
+- `--output-layout full`: writes the full docs/diagrams/meta tree directly under output root.
+- If `--output` is omitted:
+- Local source: output goes to `<source>/code-explainer-output`.
+- GitHub URL source: output goes to `<current-working-directory>/code-explainer-output`.
+
 ## Explainer Type
 
 - `--explainer-type onboarding`: default onboarding narrative.

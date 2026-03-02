@@ -37,6 +37,8 @@ IGNORE_DIRS = {
 DEFAULT_EXCLUDE_GLOBS = [
     ".out*/**",
     ".ci-*/**",
+    "code-explainer-output/**",
+    "**/code-explainer-output/**",
     "output/**",
     "artifacts/**",
     "reports/**",

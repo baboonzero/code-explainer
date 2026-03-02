@@ -15,12 +15,14 @@ Builds onboarding-grade repository explainers from local or GitHub sources.
 
 ## Output Model
 
-Two-tier docs + rendered diagrams:
+Compact-first output + detailed artifacts:
 
-1. `overview/OVERVIEW.md` for non-technical orientation.
-2. `deep/*.md` explainers for architecture, modules, flows, dependencies, and glossary.
-3. `diagrams/*.mmd` + rendered `diagrams/svg/*.svg` and `diagrams/png/*.png`.
-4. `meta/*.json` quality, confidence, and attribution artifacts.
+1. Compact entry files (default): `START_HERE.md`, `DEEP_DIVE.md`, `ONBOARDING.html`.
+2. Detailed artifacts under `_details/` in compact layout.
+3. Optional full layout writes docs/diagrams/meta directly under output root.
+4. Detailed docs include `overview/OVERVIEW.md` and `deep/*.md`.
+5. Diagrams include `.mmd`, `.svg`, and `.png`.
+6. Metadata includes quality, confidence, attribution, verification, and fact-check reports.
 
 See `references/output-contract.md` for exact files and semantics.
 
@@ -31,9 +33,10 @@ Run from this skill directory:
 ```bash
 python scripts/analyze.py analyze \
   --source <local_path_or_github_url> \
-  --output <output_dir> \
+  --output <optional_output_dir> \
   --mode <quick|standard|deep> \
   --format <markdown|html|both> \
+  --output-layout <compact|full> \
   --explainer-type <onboarding|project-recap|plan-review|diff-review> \
   --audience <nontech|mixed|engineering> \
   --overview-length <short|medium|long> \
@@ -52,6 +55,7 @@ Defaults:
 
 - `mode=standard`
 - `format=both`
+- `output-layout=compact`
 - `explainer-type=onboarding`
 - `audience=nontech`
 - `overview-length=medium`
@@ -59,6 +63,9 @@ Defaults:
 - `ask-before-llm-use=true` (interactive terminals)
 - `prompt-for-llm-key=true` (interactive terminals)
 - `enable-web-enrichment=true`
+- `output` is optional:
+- local source -> `<source>/code-explainer-output`
+- GitHub URL -> `<current-working-directory>/code-explainer-output`
 
 ## Dependencies
 

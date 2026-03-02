@@ -5,10 +5,11 @@ __pycache__/
 # Skill local outputs
 code-explainer/.out*/
 code-explainer/.out-gh/
+code-explainer/.ci-out/
+code-explainer/code-explainer-output/
 
 # OS/editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-

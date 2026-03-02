@@ -4,9 +4,14 @@
 
 Outputs include:
 
-- Crisp top-level overview (`OVERVIEW.md`)
-- Linked deep explainers (architecture, modules, flows, dependencies, glossary)
-- Interactive HTML explainer (`html/ONBOARDING.html`)
+- Compact entry files by default:
+- `START_HERE.md`
+- `DEEP_DIVE.md`
+- `ONBOARDING.html`
+- Detailed artifacts under `_details/`:
+- overview/deep markdown docs
+- diagrams (`.mmd`, `svg`, `png`)
+- metadata reports (`meta/*.json`)
 - Mermaid source diagrams (`.mmd`)
 - Rendered SVG and PNG diagrams
 - Confidence, attribution, and quality reports (`meta/*.json`)
@@ -145,9 +150,10 @@ powershell -ExecutionPolicy Bypass -File .\install_to_codex.ps1
 cd code-explainer
 python scripts/analyze.py analyze \
   --source <local_path_or_github_url> \
-  --output <output_dir> \
+  --output <optional_output_dir> \
   --mode standard \
   --format both \
+  --output-layout compact \
   --explainer-type onboarding \
   --audience nontech \
   --overview-length medium \
@@ -157,11 +163,17 @@ python scripts/analyze.py analyze \
   --enable-web-enrichment true
 ```
 
+Output path defaults:
+
+- Local folder source: `<source>/code-explainer-output`
+- GitHub URL source: `<current-working-directory>/code-explainer-output`
+
 Useful optional controls:
 
 - `--include-glob "<pattern>"` (repeatable) to scope analysis to specific paths
 - `--exclude-glob "<pattern>"` (repeatable) to remove generated/irrelevant files
 - `--format markdown|html|both`
+- `--output-layout compact|full` (`compact` is default)
 - `--explainer-type onboarding|project-recap|plan-review|diff-review`
 - `--since "<window>"` for `project-recap`
 - `--plan-file <path>` for `plan-review`

@@ -1,6 +1,22 @@
 # Output Contract
 
-`code-explainer` writes the following deterministic output tree under `<output>/`:
+`code-explainer` supports two output layouts:
+
+1. `compact` (default)
+2. `full`
+
+## Compact Layout (Default)
+
+Written under `<output>/`:
+
+1. `START_HERE.md`
+2. `DEEP_DIVE.md`
+3. `ONBOARDING.html` (when `--format html|both`)
+4. `_details/` containing the full artifact tree listed below
+
+## Full Layout
+
+Written directly under `<output>/`:
 
 1. `overview/OVERVIEW.md` (when `--format markdown|both`)
 2. `deep/ARCHITECTURE_DEEP.md` (when `--format markdown|both`)
@@ -33,6 +49,7 @@
 29. `meta/fact_check_report.json`
 30. `meta/content_completeness.json`
 31. `meta/quality_report.json`
+32. `meta/compact_output.json` (when `--output-layout compact`)
 
 ## Manifest Schema
 
@@ -51,9 +68,11 @@
 - `audience`
 - `overview_length`
 - `output_format`
+- `output_layout`
 - `analysis_type`
 - `include_globs[]`
 - `exclude_globs[]`
+- `compact_entry_files[]`
 - `docs_discovered`
 - `docs_parsed`
 - `llm_descriptions_enabled`
