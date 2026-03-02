@@ -6,7 +6,7 @@ Outputs include:
 
 - Crisp top-level overview (`OVERVIEW.md`)
 - Linked deep explainers (architecture, modules, flows, dependencies, glossary)
-- Optional interactive HTML explainer (`html/ONBOARDING.html`)
+- Interactive HTML explainer (`html/ONBOARDING.html`)
 - Mermaid source diagrams (`.mmd`)
 - Rendered SVG and PNG diagrams
 - Confidence, attribution, and quality reports (`meta/*.json`)
@@ -151,9 +151,9 @@ python scripts/analyze.py analyze \
   --explainer-type onboarding \
   --audience nontech \
   --overview-length medium \
-  --enable-llm-descriptions true \
-  --ask-before-llm-use false \
-  --prompt-for-llm-key false \
+  --llm-mode auto \
+  --ask-before-llm-use true \
+  --prompt-for-llm-key true \
   --enable-web-enrichment true
 ```
 
@@ -171,9 +171,11 @@ For LLM-based narrative summaries:
 
 - Set `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`)
 - Optional: `CODE_EXPLAINER_LLM_BASE_URL`, `CODE_EXPLAINER_LLM_MODEL`
+- Control behavior via `--llm-mode auto|required|off`
 - Optional interactive controls:
-- `--ask-before-llm-use true` (prompt for permission)
-- `--prompt-for-llm-key true` (securely prompt for key when missing)
+- `--ask-before-llm-use true` (prompt for permission in interactive terminals)
+- `--prompt-for-llm-key true` (securely prompt for key when missing in interactive terminals)
+- Legacy compatibility: `--enable-llm-descriptions true|false` maps to `auto|off`
 
 ## Install From GitHub (For Other Developers)
 

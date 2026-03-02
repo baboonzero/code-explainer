@@ -42,7 +42,7 @@ python scripts/analyze.py analyze \
   --plan-file <path> \
   --include-glob <pattern> \
   --exclude-glob <pattern> \
-  --enable-llm-descriptions <true|false> \
+  --llm-mode <auto|required|off> \
   --ask-before-llm-use <true|false> \
   --prompt-for-llm-key <true|false> \
   --enable-web-enrichment <true|false>
@@ -51,13 +51,13 @@ python scripts/analyze.py analyze \
 Defaults:
 
 - `mode=standard`
-- `format=markdown`
+- `format=both`
 - `explainer-type=onboarding`
 - `audience=nontech`
 - `overview-length=medium`
-- `enable-llm-descriptions=true`
-- `ask-before-llm-use=false`
-- `prompt-for-llm-key=false`
+- `llm-mode=auto`
+- `ask-before-llm-use=true` (interactive terminals)
+- `prompt-for-llm-key=true` (interactive terminals)
 - `enable-web-enrichment=true`
 
 ## Dependencies
@@ -108,9 +108,11 @@ bash ./scripts/install_runtime.sh
 - Without `mmdc`, fallback rendering is used and flagged in reports.
 - For LLM narrative summaries, set `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`).
 - Optional: set `CODE_EXPLAINER_LLM_BASE_URL` and `CODE_EXPLAINER_LLM_MODEL`.
-- If you want interactive control, enable:
+- Interactive prompts are supported:
 - `--ask-before-llm-use true`
 - `--prompt-for-llm-key true`
+- If you need strict narrative generation, run with `--llm-mode required`.
+- Legacy flag remains supported: `--enable-llm-descriptions <true|false>`.
 - This skill does not mutate the analyzed target repository.
 
 ## Dependency Troubleshooting

@@ -126,6 +126,47 @@ def _diagram_cards(output_root: Path, diagram_manifest: Dict[str, Any]) -> str:
     return "\n".join(cards) if cards else "<p class='note'>No diagrams generated.</p>"
 
 
+def _module_role_hint(name: str) -> str:
+    token = (name or "").lower()
+    if token in {"docs", "references", "reference", "documentation"}:
+        return "documentation and onboarding references"
+    if token in {"scripts", "tools", "tooling"}:
+        return "automation and command tooling"
+    if any(x in token for x in ["auth", "identity", "account", "user"]):
+        return "identity and access flows"
+    if any(x in token for x in ["api", "route", "handler", "controller"]):
+        return "external interfaces and request handling"
+    if any(x in token for x in ["service", "core", "domain", "logic", "usecase"]):
+        return "core business logic"
+    if any(x in token for x in ["data", "db", "repo", "model", "store"]):
+        return "data modeling and persistence"
+    if any(x in token for x in ["ui", "page", "component", "frontend"]):
+        return "user-facing interface logic"
+    return "an important part of system behavior"
+
+
+def _fallback_summary(
+    repo_name: str,
+    stack_payload: Dict[str, Any],
+    index_payload: Dict[str, Any],
+    entry_payload: Dict[str, Any],
+    flow_payload: Dict[str, Any],
+) -> str:
+    architecture = stack_payload.get("architecture_pattern", "custom architecture")
+    primary_language = stack_payload.get("primary_language", "Unknown")
+    module_count = len(index_payload.get("modules", []))
+    entry_count = int(entry_payload.get("count", len(entry_payload.get("entrypoints", []))))
+    top_modules = [m.get("name", "") for m in index_payload.get("modules", []) if m.get("name")][:3]
+    module_clause = ", ".join(top_modules) if top_modules else "core modules"
+    flow_steps = flow_payload.get("primary_user_flow", {}).get("steps", [])[:4]
+    flow_clause = " -> ".join([str(step) for step in flow_steps]) if flow_steps else "entrypoint -> core logic -> outcome"
+    return (
+        f"{repo_name} is organized as a {architecture} repository, primarily in {primary_language}. "
+        f"It includes about {module_count} top-level module groups and {entry_count} likely entrypoints. "
+        f"Key areas include {module_clause}. A representative system path is {flow_clause}."
+    )
+
+
 def generate_html(
     output_root: Path,
     source: str,
@@ -150,10 +191,7 @@ def generate_html(
     repo_name = stack_payload.get("repo_name", common.detect_repo_name(source, output_root))
     summary = (llm_payload.get("repo_summary_paragraph") or "").strip()
     if not summary:
-        summary = (
-            f"{repo_name} follows {stack_payload.get('architecture_pattern', 'a custom')} architecture "
-            f"with primary language {stack_payload.get('primary_language', 'Unknown')}."
-        )
+        summary = _fallback_summary(repo_name, stack_payload, index_payload, entry_payload, flow_payload)
 
     languages = stack_payload.get("languages", {})
     lang_text = ", ".join([f"{k} ({v})" for k, v in list(languages.items())[:8]]) or "Unknown"
@@ -164,7 +202,14 @@ def generate_html(
     critical_paths = flow_payload.get("critical_paths", [])[:8]
 
     module_rows = _table_rows(
-        [[m.get("name", ""), str(m.get("file_count", 0)), str(m.get("type", ""))] for m in modules]
+        [
+            [
+                m.get("name", ""),
+                str(m.get("file_count", 0)),
+                f"{m.get('type', '')} | {_module_role_hint(str(m.get('name', '')))}",
+            ]
+            for m in modules
+        ]
     )
     entry_rows = _table_rows([[e.get("path", ""), e.get("kind", "")] for e in entrypoints])
     path_rows = _table_rows(

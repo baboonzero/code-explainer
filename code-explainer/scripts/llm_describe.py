@@ -185,9 +185,13 @@ def _default_llm_payload(enabled: bool, model: str) -> Dict[str, Any]:
     return {
         "generated_at": common.now_iso(),
         "enabled": enabled,
+        "llm_mode": "auto",
         "used": False,
         "asked_before_use": False,
+        "consent_granted": False,
+        "consent_mode": "implicit",
         "prompted_for_key": False,
+        "api_key_source": "none",
         "provider": "openai_compatible",
         "model": model,
         "repo_summary_paragraph": "",
@@ -212,44 +216,63 @@ def generate_llm_descriptions(
     docs_payload: Dict[str, Any],
     context_payload: Dict[str, Any],
     out_dir: Path,
-    enabled: bool = True,
+    llm_mode: str = "auto",
     ask_before_use: bool = False,
     prompt_for_key: bool = False,
 ) -> Dict[str, Any]:
+    llm_mode = (llm_mode or "auto").strip().lower()
+    if llm_mode not in {"auto", "required", "off"}:
+        llm_mode = "auto"
+
     model = os.environ.get("CODE_EXPLAINER_LLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    enabled = llm_mode != "off"
     payload = _default_llm_payload(enabled=enabled, model=model)
+    payload["llm_mode"] = llm_mode
     if not enabled:
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
     interactive = _is_interactive_terminal()
+    payload["consent_granted"] = True
+    if interactive:
+        payload["consent_mode"] = "interactive"
+    else:
+        payload["consent_mode"] = "non_interactive"
+
     if ask_before_use:
         payload["asked_before_use"] = True
-        if not interactive:
-            payload["enabled"] = False
-            payload["error"] = "LLM ask-before-use requested but terminal is non-interactive; skipped."
-            common.write_json(out_dir / "llm_summary.json", payload)
-            return payload
-        if not _confirm_llm_usage():
-            payload["enabled"] = False
-            payload["error"] = "User declined LLM narrative generation for this run."
-            common.write_json(out_dir / "llm_summary.json", payload)
-            return payload
+        if interactive:
+            payload["consent_granted"] = _confirm_llm_usage()
+            if not payload["consent_granted"]:
+                payload["enabled"] = False
+                if llm_mode == "required":
+                    payload["error"] = "LLM mode is required, but user declined LLM narrative generation."
+                else:
+                    payload["error"] = "User declined LLM narrative generation for this run."
+                common.write_json(out_dir / "llm_summary.json", payload)
+                return payload
 
     api_key = (
         os.environ.get("CODE_EXPLAINER_LLM_API_KEY", "").strip()
         or os.environ.get("OPENAI_API_KEY", "").strip()
     )
+    if api_key:
+        payload["api_key_source"] = "env"
     if not api_key and prompt_for_key:
         payload["prompted_for_key"] = True
-        if not interactive:
-            payload["error"] = "Prompt-for-key requested but terminal is non-interactive and no key was found."
-            common.write_json(out_dir / "llm_summary.json", payload)
-            return payload
-        api_key = _prompt_api_key()
+        if interactive:
+            api_key = _prompt_api_key()
+            if api_key:
+                payload["api_key_source"] = "prompt"
 
     if not api_key:
-        payload["error"] = "No API key found (set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
+        if llm_mode == "required":
+            payload["error"] = (
+                "LLM mode is required, but no API key was found "
+                "(set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
+            )
+        else:
+            payload["error"] = "No API key found (set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
@@ -342,10 +365,15 @@ def main() -> int:
     parser.add_argument("--coverage", required=True)
     parser.add_argument("--explainer-context", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--enabled", default="true")
+    parser.add_argument("--llm-mode", default="auto", choices=["auto", "required", "off"])
+    parser.add_argument("--enabled", default="")
     parser.add_argument("--ask-before-use", default="false")
     parser.add_argument("--prompt-for-key", default="false")
     args = parser.parse_args()
+
+    llm_mode = (args.llm_mode or "auto").strip().lower()
+    if args.enabled.strip():
+        llm_mode = "auto" if common.bool_from_string(args.enabled) else "off"
 
     payload = generate_llm_descriptions(
         repo_root=Path(args.repo).resolve(),
@@ -361,7 +389,7 @@ def main() -> int:
         docs_payload=common.read_json(Path(args.coverage), default={}),
         context_payload=common.read_json(Path(args.explainer_context), default={}),
         out_dir=Path(args.output).resolve(),
-        enabled=common.bool_from_string(args.enabled),
+        llm_mode=llm_mode,
         ask_before_use=common.bool_from_string(args.ask_before_use),
         prompt_for_key=common.bool_from_string(args.prompt_for_key),
     )

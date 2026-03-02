@@ -77,6 +77,50 @@ def _where_to_modify(modules: List[Dict[str, Any]], limit: int) -> str:
     return "\n".join(suggestions)
 
 
+def _example_leaves(module: Dict[str, Any], max_items: int = 3) -> str:
+    leaves: List[str] = []
+    for path in module.get("examples", [])[:10]:
+        leaf = Path(path).name
+        if not leaf or leaf in leaves:
+            continue
+        leaves.append(leaf)
+        if len(leaves) >= max_items:
+            break
+    return ", ".join(leaves)
+
+
+def _module_role_hint(module: Dict[str, Any]) -> str:
+    name = str(module.get("name", "")).lower()
+    examples = " ".join([str(x).lower() for x in module.get("examples", [])[:8]])
+    context = f"{name} {examples}"
+
+    if name in {"docs", "references", "reference", "documentation"} or any(
+        token in context for token in ["readme", "guide", "handbook", "reference", ".md", ".rst"]
+    ):
+        return "contains onboarding and reference documentation"
+    if name in {"scripts", "tools", "tooling"} or any(
+        token in context for token in ["script", "tool", "cli", "command", "automation"]
+    ):
+        return "contains automation scripts and command-line tooling"
+    if any(token in context for token in ["auth", "login", "identity", "account", "profile", "permission"]):
+        return "handles identity, accounts, or access control flows"
+    if any(token in context for token in ["api", "route", "router", "handler", "controller", "endpoint"]):
+        return "exposes system interfaces and request entry paths"
+    if any(token in context for token in ["ui", "page", "component", "frontend", "webapp", "screen"]):
+        return "contains user-facing UI surfaces and interaction logic"
+    if any(token in context for token in ["service", "core", "domain", "usecase", "business", "engine"]):
+        return "implements core business logic and orchestration"
+    if any(token in context for token in ["data", "db", "database", "repo", "model", "schema", "migration", "store"]):
+        return "manages data modeling, persistence, or storage access"
+    if any(token in context for token in ["worker", "queue", "job", "task", "cron", "background"]):
+        return "runs asynchronous and background processing"
+    if any(token in context for token in ["infra", "deploy", "k8s", "terraform", "docker", "helm"]):
+        return "defines deployment and infrastructure configuration"
+    if any(token in context for token in ["test", "spec", "e2e", "integration", "pytest", "jest"]):
+        return "contains test coverage and quality checks"
+    return "contains an important slice of system behavior and implementation"
+
+
 def _llm_directory_summaries(llm_payload: Dict[str, Any], fallback_modules: List[Dict[str, Any]], limit: int = 8) -> str:
     items = llm_payload.get("directory_summaries", [])
     lines: List[str] = []
@@ -96,7 +140,15 @@ def _llm_directory_summaries(llm_payload: Dict[str, Any], fallback_modules: List
         name = module.get("name", "")
         if not name:
             continue
-        lines.append(f"- **{name}**: Module with {module.get('file_count', 0)} files.")
+        file_count = int(module.get("file_count", 0))
+        role = _module_role_hint(module)
+        examples = _example_leaves(module)
+        if examples:
+            lines.append(
+                f"- **{name}**: {role}. It has about {file_count} files, including `{examples}`."
+            )
+        else:
+            lines.append(f"- **{name}**: {role}. It has about {file_count} files.")
     return "\n".join(lines) if lines else "- No directory-level summary available."
 
 
@@ -258,6 +310,10 @@ def _plain_system_summary(
     doc_payload: Dict[str, Any],
     llm_payload: Dict[str, Any],
     audience: str,
+    index_payload: Dict[str, Any],
+    entry_payload: Dict[str, Any],
+    dep_payload: Dict[str, Any],
+    flow_payload: Dict[str, Any],
 ) -> str:
     llm_summary = str(llm_payload.get("repo_summary_paragraph", "")).strip()
     if llm_summary:
@@ -265,39 +321,50 @@ def _plain_system_summary(
 
     parsed_docs = doc_payload.get("parsed_docs", [])
     summary_doc = _pick_summary_doc(parsed_docs)
+    architecture = stack_payload.get("architecture_pattern", "custom architecture")
+    primary_language = stack_payload.get("primary_language", "Unknown")
+    module_count = len(index_payload.get("modules", []))
+    entry_count = len(entry_payload.get("entrypoints", []))
+    external_dep_count = sum(
+        len(deps) for deps in dep_payload.get("external_dependencies", {}).values() if isinstance(deps, list)
+    )
+    primary_steps = flow_payload.get("primary_user_flow", {}).get("steps", [])[:4]
+    primary_flow = " -> ".join(primary_steps)
+
     if summary_doc:
         seed = summary_doc.get("summary", "").strip()
         if seed:
-            if audience == "engineering":
-                return (
-                    f"{seed}\n\nFrom code signals, {repo_name} appears to follow "
-                    f"{stack_payload.get('architecture_pattern', 'a custom')} architecture."
-                )
-            if audience == "mixed":
-                return (
-                    f"{seed}\n\nThe codebase is organized using "
-                    f"{stack_payload.get('architecture_pattern', 'a custom')} architecture, "
-                    "with clear module boundaries for onboarding."
-                )
-            return (
-                f"{seed}\n\nIn plain terms: this repository contains the product logic and supporting services "
-                "that power user-facing behavior."
+            suffix = (
+                f" From code signals, it looks like a {architecture} system in {primary_language}, "
+                f"organized into {module_count} top-level areas with {entry_count} likely entrypoints."
             )
+            if primary_flow:
+                suffix += f" A representative flow is: {primary_flow}."
+            if audience == "engineering":
+                return f"{seed}\n\n{suffix}"
+            if audience == "mixed":
+                return f"{seed}\n\n{suffix} This gives a practical map for product and engineering handoff."
+            return f"{seed}\n\n{suffix}"
 
     frameworks = ", ".join(stack_payload.get("frameworks", [])[:4]) or "core platform libraries"
     if audience == "engineering":
         return (
-            f"{repo_name} is a {stack_payload.get('architecture_pattern', 'custom')} system "
-            f"built on {frameworks}. This summary is inferred from repository structure and dependency signals."
+            f"{repo_name} appears to be a {architecture} codebase built primarily in {primary_language} "
+            f"on {frameworks}. It contains {module_count} top-level modules and {entry_count} likely entrypoints. "
+            f"Detected external dependencies: {external_dep_count}. "
+            "This summary is inferred from repository structure, dependency signals, and parsed documentation."
         )
     if audience == "mixed":
         return (
-            f"{repo_name} appears to be organized as a {stack_payload.get('architecture_pattern', 'custom')} system "
-            f"built on {frameworks}."
+            f"{repo_name} appears to be organized as a {architecture} system built on {frameworks}. "
+            f"The repository has {module_count} major code areas and {entry_count} likely entrypoints, which is "
+            "a practical starting map for both product and engineering stakeholders."
         )
     return (
-        f"{repo_name} is the core product codebase. It is built with {frameworks} and organized so teams can "
-        "ship features across shared modules."
+        f"{repo_name} is a working software system organized into about {module_count} major areas. "
+        f"It is primarily {primary_language}-based, uses {frameworks}, and exposes around {entry_count} likely "
+        "entrypoints where requests or commands begin. This explainer traces how information moves through the "
+        "code so PMs, designers, and new engineers can understand what exists before reading files in depth."
     )
 
 
@@ -480,7 +547,17 @@ def generate_docs(
         "audience_note": _audience_note(audience),
         "mode_note": _mode_note(mode),
         "overview_length_note": _overview_length_note(overview_length),
-        "plain_summary": _plain_system_summary(repo_name, stack_payload, docs_payload, llm_payload, audience),
+        "plain_summary": _plain_system_summary(
+            repo_name,
+            stack_payload,
+            docs_payload,
+            llm_payload,
+            audience,
+            index_payload,
+            entry_payload,
+            dep_payload,
+            flow_payload,
+        ),
         "docs_coverage": _docs_coverage_line(docs_payload),
         "docs_quick_links": _docs_summary(docs_payload, profile["doc_link_limit"]),
         "primary_user_flow_summary": _primary_flow_summary(flow_payload),

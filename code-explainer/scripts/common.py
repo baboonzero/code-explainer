@@ -199,9 +199,17 @@ def top_level_modules(files: Iterable[Dict[str, Any]], max_items: int = 60) -> L
 
         top = path.split("/", 1)[0]
         if top not in buckets:
-            buckets[top] = {"name": top, "type": "directory", "file_count": 0, "total_bytes": 0}
+            buckets[top] = {
+                "name": top,
+                "type": "directory",
+                "file_count": 0,
+                "total_bytes": 0,
+                "examples": [],
+            }
         buckets[top]["file_count"] += 1
         buckets[top]["total_bytes"] += size
+        if len(buckets[top]["examples"]) < 10:
+            buckets[top]["examples"].append(path)
 
     ranked = sorted(
         buckets.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True

@@ -157,7 +157,12 @@ def _check_content_completeness(output_root: Path, output_format: str) -> Dict[s
     return payload
 
 
-def _check_semantic_quality(output_root: Path, output_format: str, analysis_type: str) -> Dict[str, List[str]]:
+def _check_semantic_quality(
+    output_root: Path,
+    output_format: str,
+    analysis_type: str,
+    llm_mode: str,
+) -> Dict[str, List[str]]:
     errors: List[str] = []
     warnings: List[str] = []
 
@@ -187,13 +192,26 @@ def _check_semantic_quality(output_root: Path, output_format: str, analysis_type
             warnings.append(
                 "Overview appears overly generic (placeholder-like phrases detected); consider deeper mode or tighter include-glob filters."
             )
+        placeholder_dir_hits = len(re.findall(r"\bmodule with \d+ files\b", overview_text))
+        if placeholder_dir_hits >= 3:
+            warnings.append(
+                "Directory map includes mostly structural placeholders ('Module with N files') instead of semantic descriptions."
+            )
+        overview_word_count = len(re.findall(r"\b[a-z0-9_-]+\b", overview_text))
+        if overview_word_count < 120:
+            warnings.append("Overview is very short (<120 words) and may not be useful for non-technical onboarding.")
 
     flows = common.read_json(output_root / "meta" / "flows.json", default={})
     if int(flows.get("dependency_edge_count", 0)) > 0 and not flows.get("critical_paths"):
         warnings.append("Dependency edges were found but no critical paths were extracted.")
 
     llm_summary = common.read_json(output_root / "meta" / "llm_summary.json", default={})
-    if llm_summary.get("enabled", False) and not llm_summary.get("used", False):
+    llm_used = bool(llm_summary.get("used", False))
+    llm_enabled = bool(llm_summary.get("enabled", False))
+    if llm_mode == "required" and not llm_used:
+        err = llm_summary.get("error", "LLM narrative was required but not used.")
+        errors.append(f"LLM required mode failed: {err}")
+    elif llm_enabled and not llm_used:
         err = llm_summary.get("error", "LLM narrative was enabled but not used.")
         warnings.append(f"LLM narrative unavailable: {err}")
 
@@ -246,6 +264,7 @@ def run_quality_gate(
     mode: str,
     output_format: str = "markdown",
     analysis_type: str = "onboarding",
+    llm_mode: str = "auto",
 ) -> Dict[str, Any]:
     errors: List[str] = []
     warnings: List[str] = []
@@ -268,7 +287,7 @@ def run_quality_gate(
     attribution = common.read_json(output_root / "meta" / "source_attribution.json", default={"attributions": []})
     errors.extend(_check_claim_evidence(confidence, attribution))
 
-    semantic = _check_semantic_quality(output_root, output_format, analysis_type)
+    semantic = _check_semantic_quality(output_root, output_format, analysis_type, llm_mode)
     errors.extend(semantic["errors"])
     warnings.extend(semantic["warnings"])
 
@@ -277,6 +296,7 @@ def run_quality_gate(
         "mode": mode,
         "output_format": output_format,
         "analysis_type": analysis_type,
+        "llm_mode": llm_mode,
         "passed": len(errors) == 0,
         "errors": errors,
         "warnings": warnings,
@@ -291,12 +311,14 @@ def main() -> int:
     parser.add_argument("--mode", default="standard")
     parser.add_argument("--output-format", default="markdown")
     parser.add_argument("--analysis-type", default="onboarding")
+    parser.add_argument("--llm-mode", default="auto", choices=["auto", "required", "off"])
     args = parser.parse_args()
     report = run_quality_gate(
         output_root=Path(args.output_root).resolve(),
         mode=common.normalize_mode(args.mode),
         output_format=args.output_format,
         analysis_type=args.analysis_type,
+        llm_mode=args.llm_mode,
     )
     if report["passed"]:
         print("Quality gate passed.")

@@ -93,6 +93,7 @@ def _write_manifest(
     entry_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
     llm_payload: Dict[str, Any],
+    llm_mode: str,
     verification_payload: Dict[str, Any],
     html_payload: Dict[str, Any],
     fact_check_payload: Dict[str, Any],
@@ -118,6 +119,7 @@ def _write_manifest(
         "docs_parsed": docs_payload.get("parsed_count", 0),
         "llm_descriptions_enabled": llm_payload.get("enabled", False),
         "llm_descriptions_used": llm_payload.get("used", False),
+        "llm_mode": llm_mode,
         "llm_model": llm_payload.get("model", ""),
         "verification_fact_count": verification_payload.get("fact_count", 0),
         "fact_check_passed": fact_check_payload.get("passed", False),
@@ -139,7 +141,7 @@ def run_pipeline(
     output_format: str,
     analysis_type: str,
     enable_web_enrichment: bool,
-    enable_llm_descriptions: bool,
+    llm_mode: str,
     ask_before_llm_use: bool = False,
     prompt_for_llm_key: bool = False,
     include_globs: List[str] | None = None,
@@ -209,7 +211,7 @@ def run_pipeline(
             docs_payload=coverage_payload,
             context_payload=context_payload,
             out_dir=meta_dir,
-            enabled=enable_llm_descriptions,
+            llm_mode=llm_mode,
             ask_before_use=ask_before_llm_use,
             prompt_for_key=prompt_for_llm_key,
         )
@@ -289,6 +291,7 @@ def run_pipeline(
             entry_payload=entry_payload,
             docs_payload=coverage_payload,
             llm_payload=llm_payload,
+            llm_mode=llm_mode,
             verification_payload=verification_payload,
             html_payload=html_payload,
             fact_check_payload=fact_check_payload,
@@ -303,6 +306,7 @@ def run_pipeline(
             mode=mode,
             output_format=output_format,
             analysis_type=analysis_type,
+            llm_mode=llm_mode,
         )
 
         return {
@@ -313,6 +317,7 @@ def run_pipeline(
             "output_format": output_format,
             "audience": audience,
             "overview_length": overview_length,
+            "llm_mode": llm_mode,
             "file_count": index_payload.get("file_count", 0),
             "docs_discovered": coverage_payload.get("discovered_count", 0),
             "docs_parsed": coverage_payload.get("parsed_count", 0),
@@ -339,7 +344,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", default="standard", choices=["quick", "standard", "deep"])
     parser.add_argument("--audience", default="nontech", choices=["nontech", "mixed", "engineering"])
     parser.add_argument("--overview-length", default="medium", choices=["short", "medium", "long"])
-    parser.add_argument("--format", default="markdown", choices=["markdown", "html", "both"])
+    parser.add_argument("--format", default="both", choices=["markdown", "html", "both"])
     parser.add_argument(
         "--explainer-type",
         default="onboarding",
@@ -361,9 +366,10 @@ def _parse_args() -> argparse.Namespace:
         help="Glob(s) to exclude from indexing.",
     )
     parser.add_argument("--enable-web-enrichment", default="true")
-    parser.add_argument("--enable-llm-descriptions", default="true")
-    parser.add_argument("--ask-before-llm-use", default="false")
-    parser.add_argument("--prompt-for-llm-key", default="false")
+    parser.add_argument("--llm-mode", default="auto", choices=["auto", "required", "off"])
+    parser.add_argument("--enable-llm-descriptions", default="")
+    parser.add_argument("--ask-before-llm-use", default="true")
+    parser.add_argument("--prompt-for-llm-key", default="true")
     return parser.parse_args()
 
 
@@ -375,7 +381,9 @@ def main() -> int:
 
     mode = common.normalize_mode(args.mode)
     web_enabled = common.bool_from_string(args.enable_web_enrichment)
-    llm_enabled = common.bool_from_string(args.enable_llm_descriptions)
+    llm_mode = (args.llm_mode or "auto").strip().lower()
+    if args.enable_llm_descriptions.strip():
+        llm_mode = "auto" if common.bool_from_string(args.enable_llm_descriptions) else "off"
     ask_before_llm_use = common.bool_from_string(args.ask_before_llm_use)
     prompt_for_llm_key = common.bool_from_string(args.prompt_for_llm_key)
     summary = run_pipeline(
@@ -387,7 +395,7 @@ def main() -> int:
         output_format=args.format,
         analysis_type=args.explainer_type,
         enable_web_enrichment=web_enabled,
-        enable_llm_descriptions=llm_enabled,
+        llm_mode=llm_mode,
         ask_before_llm_use=ask_before_llm_use,
         prompt_for_llm_key=prompt_for_llm_key,
         include_globs=args.include_glob,
@@ -405,6 +413,7 @@ def main() -> int:
         "output_format",
         "audience",
         "overview_length",
+        "llm_mode",
         "file_count",
         "docs_discovered",
         "docs_parsed",

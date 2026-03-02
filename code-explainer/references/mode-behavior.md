@@ -42,10 +42,14 @@ Goal: Maximum fidelity and audit-ready onboarding.
 
 ## LLM Narrative
 
-- Controlled with `--enable-llm-descriptions <true|false>`.
-- Optional interactive controls:
-- `--ask-before-llm-use true`
-- `--prompt-for-llm-key true`
+- Controlled with `--llm-mode <auto|required|off>`.
+- `auto`: try LLM when possible, otherwise continue with deterministic fallback.
+- `required`: fail quality gate unless LLM narrative is successfully used.
+- `off`: deterministic-only mode; no LLM attempt.
+- Interactive controls (enabled by default in `analyze.py`):
+- `--ask-before-llm-use true|false`
+- `--prompt-for-llm-key true|false`
+- Legacy compatibility: `--enable-llm-descriptions <true|false>` maps to `auto|off`.
 - Reads API config from env vars:
 - `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`)
 - `CODE_EXPLAINER_LLM_BASE_URL` (optional)
@@ -56,6 +60,7 @@ Goal: Maximum fidelity and audit-ready onboarding.
 - `--format markdown`: generate markdown explainers (overview + deep docs).
 - `--format html`: generate a single interactive HTML explainer page.
 - `--format both`: generate markdown + interactive HTML.
+- Default format is `both`.
 
 ## Explainer Type
 

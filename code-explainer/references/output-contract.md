@@ -58,6 +58,7 @@
 - `docs_parsed`
 - `llm_descriptions_enabled`
 - `llm_descriptions_used`
+- `llm_mode`
 - `llm_model`
 - `verification_fact_count`
 - `fact_check_passed`
@@ -113,9 +114,13 @@
 
 - `generated_at`
 - `enabled`
+- `llm_mode`
 - `used`
 - `asked_before_use`
+- `consent_granted`
+- `consent_mode`
 - `prompted_for_key`
+- `api_key_source`
 - `provider`
 - `model`
 - `repo_summary_paragraph`
