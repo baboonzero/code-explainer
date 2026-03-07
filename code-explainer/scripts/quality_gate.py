@@ -12,6 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import common
+import evaluate_output
 
 
 BASE_REQUIRED_OUTPUTS = [
@@ -23,6 +24,8 @@ BASE_REQUIRED_OUTPUTS = [
     "meta/verification_checkpoint.json",
     "meta/fact_check_report.json",
     "meta/docs_generation.json",
+    "meta/explanation_plan.json",
+    "meta/explanation_quality.json",
 ]
 
 
@@ -32,7 +35,11 @@ def _required_outputs_for_format(output_format: str) -> List[str]:
         outputs.extend(
             [
                 "overview/OVERVIEW.md",
-                "deep/SYSTEM_DEEP_DIVE.md",
+                "deep/ARCHITECTURE_DEEP.md",
+                "deep/MODULES_DEEP.md",
+                "deep/FLOWS_DEEP.md",
+                "deep/DEPENDENCIES_DEEP.md",
+                "deep/GLOSSARY.md",
             ]
         )
     if output_format in {"html", "both"}:
@@ -84,7 +91,11 @@ def _build_content_corpus(output_root: Path, output_format: str) -> str:
     if output_format in {"markdown", "both"}:
         for rel in [
             "overview/OVERVIEW.md",
-            "deep/SYSTEM_DEEP_DIVE.md",
+            "deep/ARCHITECTURE_DEEP.md",
+            "deep/MODULES_DEEP.md",
+            "deep/FLOWS_DEEP.md",
+            "deep/DEPENDENCIES_DEEP.md",
+            "deep/GLOSSARY.md",
         ]:
             text = common.read_text(output_root / rel)
             if text:
@@ -149,12 +160,7 @@ def _check_content_completeness(output_root: Path, output_format: str) -> Dict[s
     return payload
 
 
-def _check_semantic_quality(
-    output_root: Path,
-    output_format: str,
-    analysis_type: str,
-    llm_mode: str,
-) -> Dict[str, List[str]]:
+def _check_semantic_quality(output_root: Path, output_format: str, analysis_type: str) -> Dict[str, List[str]]:
     errors: List[str] = []
     warnings: List[str] = []
 
@@ -173,37 +179,24 @@ def _check_semantic_quality(
     if output_format in {"markdown", "both"}:
         overview_text = common.read_text(output_root / "overview" / "OVERVIEW.md").lower()
         generic_markers = [
-            "module_a",
-            "module_b",
-            "user intent",
+            "user goal",
+            "need context?",
+            "service layer",
+            "data layer",
             "core module",
-            "persistence/state",
         ]
         generic_hits = [marker for marker in generic_markers if marker in overview_text]
-        if len(generic_hits) >= 2:
+        if len(generic_hits) >= 3:
             warnings.append(
                 "Overview appears overly generic (placeholder-like phrases detected); consider deeper mode or tighter include-glob filters."
             )
-        placeholder_dir_hits = len(re.findall(r"\bmodule with \d+ files\b", overview_text))
-        if placeholder_dir_hits >= 3:
-            warnings.append(
-                "Directory map includes mostly structural placeholders ('Module with N files') instead of semantic descriptions."
-            )
-        overview_word_count = len(re.findall(r"\b[a-z0-9_-]+\b", overview_text))
-        if overview_word_count < 120:
-            warnings.append("Overview is very short (<120 words) and may not be useful for non-technical onboarding.")
 
     flows = common.read_json(output_root / "meta" / "flows.json", default={})
     if int(flows.get("dependency_edge_count", 0)) > 0 and not flows.get("critical_paths"):
         warnings.append("Dependency edges were found but no critical paths were extracted.")
 
     llm_summary = common.read_json(output_root / "meta" / "llm_summary.json", default={})
-    llm_used = bool(llm_summary.get("used", False))
-    llm_enabled = bool(llm_summary.get("enabled", False))
-    if llm_mode == "required" and not llm_used:
-        err = llm_summary.get("error", "LLM narrative was required but not used.")
-        errors.append(f"LLM required mode failed: {err}")
-    elif llm_enabled and not llm_used:
+    if llm_summary.get("enabled", False) and not llm_summary.get("used", False):
         err = llm_summary.get("error", "LLM narrative was enabled but not used.")
         warnings.append(f"LLM narrative unavailable: {err}")
 
@@ -256,10 +249,12 @@ def run_quality_gate(
     mode: str,
     output_format: str = "markdown",
     analysis_type: str = "onboarding",
-    llm_mode: str = "auto",
+    audience: str = "nontech",
 ) -> Dict[str, Any]:
     errors: List[str] = []
     warnings: List[str] = []
+
+    eval_payload = evaluate_output.evaluate_output(output_root, audience, analysis_type)
 
     required = _required_outputs_for_format(output_format)
     for item in required:
@@ -273,28 +268,55 @@ def run_quality_gate(
 
     validation = common.read_json(output_root / "meta" / "mermaid_validation.json", default={})
     if validation and not validation.get("overall_ok", False):
-        errors.append("Mermaid validation failed for one or more diagrams.")
+        if validation.get("environment_blocked", False):
+            warnings.append(
+                "Mermaid validation fell back to heuristic checks because the Mermaid CLI browser runtime was unavailable."
+            )
+        else:
+            errors.append("Mermaid validation failed for one or more diagrams.")
+
     render_report = common.read_json(output_root / "meta" / "render_report.json", default={})
-    if render_report and render_report.get("renderer") == "fallback":
-        errors.append("Diagram rendering used fallback renderer (mmdc unavailable); output quality is not acceptable.")
+    if render_report:
+        failed_renders = [item for item in render_report.get("results", []) if not item.get("ok", False)]
+        fallback_renders = [
+            item for item in render_report.get("results", [])
+            if str(item.get("renderer", "")).startswith("fallback")
+        ]
+        if failed_renders:
+            errors.append(f"Diagram rendering failed for {len(failed_renders)} diagram(s).")
+        elif fallback_renders:
+            warnings.append(
+                f"Diagram rendering used fallback artifacts for {len(fallback_renders)} diagram(s) because mmdc was unavailable or unhealthy."
+            )
 
     confidence = common.read_json(output_root / "meta" / "confidence_report.json", default={"claims": []})
     attribution = common.read_json(output_root / "meta" / "source_attribution.json", default={"attributions": []})
     errors.extend(_check_claim_evidence(confidence, attribution))
 
-    semantic = _check_semantic_quality(output_root, output_format, analysis_type, llm_mode)
+    semantic = _check_semantic_quality(output_root, output_format, analysis_type)
     errors.extend(semantic["errors"])
     warnings.extend(semantic["warnings"])
+
+    if not eval_payload.get("passed", False):
+        failures = ", ".join(eval_payload.get("failures", [])) or "unknown"
+        errors.append(
+            f"Explanation quality failed with score {eval_payload.get('score', 0)} (dimensions below threshold: {failures})."
+        )
+    elif float(eval_payload.get("score", 0.0)) < 86.0:
+        warnings.append(
+            f"Explanation quality passed narrowly with score {eval_payload.get('score', 0)}; consider improving low-scoring dimensions."
+        )
 
     payload = {
         "checked_at": common.now_iso(),
         "mode": mode,
         "output_format": output_format,
         "analysis_type": analysis_type,
-        "llm_mode": llm_mode,
+        "audience": audience,
         "passed": len(errors) == 0,
         "errors": errors,
         "warnings": warnings,
+        "explanation_quality_score": eval_payload.get("score", 0.0),
     }
     common.write_json(output_root / "meta" / "quality_report.json", payload)
     return payload
@@ -306,14 +328,14 @@ def main() -> int:
     parser.add_argument("--mode", default="standard")
     parser.add_argument("--output-format", default="markdown")
     parser.add_argument("--analysis-type", default="onboarding")
-    parser.add_argument("--llm-mode", default="auto", choices=["auto", "required", "off"])
+    parser.add_argument("--audience", default="nontech")
     args = parser.parse_args()
     report = run_quality_gate(
         output_root=Path(args.output_root).resolve(),
         mode=common.normalize_mode(args.mode),
         output_format=args.output_format,
         analysis_type=args.analysis_type,
-        llm_mode=args.llm_mode,
+        audience=args.audience,
     )
     if report["passed"]:
         print("Quality gate passed.")

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -15,192 +14,194 @@ if str(SCRIPT_DIR) not in sys.path:
 import common
 
 
-def _humanize(text: str) -> str:
-    return " ".join(str(text or "").replace("_", " ").replace("-", " ").split()).strip()
+def _bullets(items: List[str], fallback: str = "- Not available") -> str:
+    cleaned = [str(item).strip() for item in items if str(item).strip()]
+    if not cleaned:
+        return fallback
+    return "\n".join([f"- {item}" for item in cleaned])
 
 
-def _role_hint(name: str) -> str:
-    token = (name or "").lower()
-    if token in {"scripts", "tools"}:
-        return "the scripts that run the analysis and create the final explainer files"
-    if token in {"docs", "references"}:
-        return "written documentation, guides, and reference notes"
-    if any(x in token for x in ["api", "route", "handler", "controller"]):
-        return "the part that receives requests or inputs"
-    if any(x in token for x in ["service", "core", "domain", "logic"]):
-        return "the main project behavior and decision logic"
-    if any(x in token for x in ["data", "db", "repo", "model", "store"]):
-        return "how data is saved, loaded, and transformed"
-    if any(x in token for x in ["ui", "page", "component", "frontend"]):
-        return "what users see and interact with"
-    return "an important part of the project"
+def _numbered(items: List[str], fallback: str = "1. Not available") -> str:
+    cleaned = [str(item).strip() for item in items if str(item).strip()]
+    if not cleaned:
+        return fallback
+    return "\n".join([f"{index}. {item}" for index, item in enumerate(cleaned, start=1)])
 
 
-def _sample_files_for_module(module_name: str, files: List[Dict[str, Any]], limit: int = 3) -> List[str]:
-    out: List[str] = []
-    for item in files:
-        rel = item.get("path", "")
-        if module_name == "(root-files)":
-            if "/" in rel:
-                continue
-        else:
-            norm = rel.replace("\\", "/")
-            if not (
-                norm.startswith(f"{module_name}/")
-                or f"/{module_name}/" in norm
-            ):
-                continue
-        out.append(rel)
-        if len(out) >= limit:
-            break
-    return out
-
-
-def _entrypoints_table(entrypoints: List[Dict[str, Any]]) -> str:
-    if not entrypoints:
-        return "_I could not find a clear starting file in this run._"
-    lines = ["| Start here | Why this file matters |", "|---|---|"]
-    for ep in entrypoints[:10]:
-        kind = str(ep.get("kind", "entrypoint")).strip()
-        score = ep.get("score", "")
-        confidence = ""
-        if str(score) != "":
-            try:
-                s = int(score)
-                if s >= 100:
-                    confidence = " (high confidence)"
-                elif s >= 60:
-                    confidence = " (medium confidence)"
-                else:
-                    confidence = " (low confidence)"
-            except Exception:
-                confidence = ""
-        lines.append(f"| `{ep.get('path', '')}` | {kind}{confidence} |")
-    return "\n".join(lines)
-
-
-def _critical_path_text(flow_payload: Dict[str, Any], limit: int = 4) -> str:
-    rows = []
-    for path in flow_payload.get("critical_paths", [])[:limit]:
-        steps = [str(s) for s in path.get("plain_steps", path.get("steps", [])) if str(s).strip()]
-        if not steps:
-            continue
-        cleaned = []
-        for step in steps:
-            if step.startswith("Read "):
-                cleaned.append(step)
-            elif "/" in step:
-                p = Path(step)
-                cleaned.append(f"{p.parent.name}/{p.stem}" if p.parent.name else p.stem)
-            elif "." in step:
-                module_name, fn_name = step.rsplit(".", 1)
-                cleaned.append(f"{module_name}.{fn_name.replace('_', ' ').strip()}")
-            else:
-                cleaned.append(_humanize(step))
-        rows.append(f"- **{path.get('name', 'Main path')}**: {' -> '.join(cleaned)}")
-    return "\n".join(rows) if rows else "- No detailed critical path extracted."
-
-
-def _plain_summary(
+def _repo_summary(
     repo_name: str,
-    audience: str,
     stack_payload: Dict[str, Any],
-    docs_payload: Dict[str, Any],
     llm_payload: Dict[str, Any],
-    index_payload: Dict[str, Any],
-    flow_payload: Dict[str, Any],
+    plan_payload: Dict[str, Any],
 ) -> str:
-    llm_summary = str(llm_payload.get("repo_summary_paragraph", "")).strip()
-    if llm_summary:
-        return llm_summary
-
-    parsed_docs = docs_payload.get("parsed_docs", [])
-    readme = None
-    for doc in parsed_docs:
-        if "readme" in str(doc.get("path", "")).lower():
-            readme = doc
-            break
-    if readme and readme.get("summary"):
-        seed = str(readme.get("summary", "")).strip()
-    else:
-        seed = ""
-
-    module_count = len(index_payload.get("modules", []))
-    language = stack_payload.get("primary_language", "Unknown")
-    architecture = stack_payload.get("architecture_pattern", "general")
-    lifecycle = " -> ".join([str(s) for s in flow_payload.get("request_lifecycle", [])[:4]])
-    entry_count = int(index_payload.get("file_count", 0))
-
-    if not seed:
-        if audience == "nontech":
-            return (
-                f"This repository contains the code and documentation for {repo_name}. "
-                f"Most of the code is written in {language}. "
-                f"The project is organized into {module_count} main areas, and the overall flow is: "
-                f"{lifecycle or 'input -> processing -> output'}."
-            )
-        return (
-            f"{repo_name} is mostly a {language} project. "
-            f"It is organized into {module_count} main folders and files with a clear step-by-step processing flow."
-        )
+    summary = str(llm_payload.get("repo_summary_paragraph", "")).strip()
+    if summary:
+        return summary
+    seed = str(plan_payload.get("summary_seed", "")).strip()
+    if seed:
+        return seed
+    frameworks = ", ".join(stack_payload.get("frameworks", [])[:3]) or stack_payload.get("primary_language", "the detected stack")
+    architecture = stack_payload.get("architecture_pattern", "a custom structure")
     return (
-        f"{seed}\n\n"
-        f"In plain terms: this is mainly a {language} project with about {module_count} major code areas "
-        f"and around {entry_count} tracked files. "
-        f"A representative end-to-end flow is: {lifecycle or 'input -> processing -> output'}."
+        f"{repo_name} appears to be organized as {architecture.lower()} and built on {frameworks}. "
+        "This summary is grounded in repository structure, entrypoints, dependencies, and any parsed docs."
     )
 
 
-def _directory_map(index_payload: Dict[str, Any], max_items: int = 7) -> str:
-    modules = index_payload.get("modules", [])[:max_items]
-    files = index_payload.get("files", [])
-    if not modules:
-        return "- No module groups detected."
-    lines = []
-    for module in modules:
-        name = module.get("name", "")
+def _module_explanations(llm_payload: Dict[str, Any], plan_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    llm_modules = llm_payload.get("module_explanations", [])
+    if isinstance(llm_modules, list) and llm_modules:
+        return [item for item in llm_modules if isinstance(item, dict)]
+    fallback = []
+    for item in plan_payload.get("top_modules", [])[:8]:
+        samples = item.get("sample_paths", [])
+        fallback.append(
+            {
+                "name": item.get("name", ""),
+                "responsibility": item.get("responsibility_hint", ""),
+                "why_it_matters": item.get("change_hint", ""),
+                "first_file_to_open": samples[0] if samples else "",
+                "sample_paths": samples,
+            }
+        )
+    return fallback
+
+
+def _flow_explanations(llm_payload: Dict[str, Any], plan_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    steps = llm_payload.get("flow_explanation_steps", [])
+    if isinstance(steps, list) and steps:
+        return [item for item in steps if isinstance(item, dict)]
+    fallback = []
+    for step in plan_payload.get("primary_flow_steps", [])[:6]:
+        fallback.append(
+            {
+                "step": step,
+                "what_happens": f"The main flow passes through `{step}`.",
+                "why_it_matters": "This helps a new reader follow the core behavior end-to-end.",
+            }
+        )
+    return fallback
+
+
+def _diagram_briefs(llm_payload: Dict[str, Any], plan_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    items = llm_payload.get("diagram_briefs", [])
+    if isinstance(items, list) and items:
+        return [item for item in items if isinstance(item, dict)]
+    fallback = []
+    for item in plan_payload.get("diagram_briefs", [])[:8]:
+        fallback.append(
+            {
+                "id": item.get("id", ""),
+                "caption": item.get("purpose", ""),
+                "takeaway": item.get("reader_question", ""),
+            }
+        )
+    return fallback
+
+
+def _module_cards_text(modules: List[Dict[str, Any]], max_items: int = 6) -> str:
+    sections: List[str] = []
+    for item in modules[:max_items]:
+        name = str(item.get("name", "")).strip()
         if not name:
             continue
-        count = int(module.get("file_count", 0))
-        role = _role_hint(name)
-        samples = _sample_files_for_module(name, files, limit=3)
-        sample_text = ", ".join([f"`{s}`" for s in samples]) if samples else "no sample files collected"
-        lines.append(
-            f"- **{name}** ({count} files): {role}. Examples: {sample_text}."
-        )
-    return "\n".join(lines)
+        sections.append(f"### `{name}`")
+        responsibility = str(item.get("responsibility", "") or item.get("responsibility_hint", "")).strip()
+        if responsibility:
+            sections.append(f"- Role: {responsibility}")
+        why = str(item.get("why_it_matters", "") or item.get("change_hint", "")).strip()
+        if why:
+            sections.append(f"- Why it matters: {why}")
+        first_file = str(item.get("first_file_to_open", "")).strip()
+        if first_file:
+            sections.append(f"- First file to open: `{first_file}`")
+        sample_paths = item.get("sample_paths", [])
+        if isinstance(sample_paths, list) and sample_paths:
+            sections.append(f"- Evidence: {', '.join([f'`{path}`' for path in sample_paths[:3]])}")
+        sections.append("")
+    return "\n".join(sections).strip() or "No module cards available."
 
 
-def _diagram_links(diagram_manifest: Dict[str, Any]) -> str:
-    out = []
-    for name in diagram_manifest.get("diagram_files", []):
-        stem = Path(name).stem
-        out.append(f"- `{name}` -> [SVG](../diagrams/svg/{stem}.svg) | [PNG](../diagrams/png/{stem}.png)")
-    return "\n".join(out) if out else "- No diagrams generated."
-
-
-def _llm_notes(llm_payload: Dict[str, Any]) -> str:
-    if llm_payload.get("used", False):
-        notes = llm_payload.get("confidence_notes", [])
-        if isinstance(notes, list) and notes:
-            return "\n".join([f"- {str(note)}" for note in notes[:5]])
-        return "- LLM narratives were used for summary framing."
-    if llm_payload.get("enabled", False):
-        return f"- AI summary was enabled but not used: {llm_payload.get('error', 'no model response')}"
-    return "- AI narrative generation is turned off for this run."
-
-
-def _apply_verification_evidence(claims: List[Dict[str, Any]], verification_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    fact_map = {fact.get("claim_id", ""): fact for fact in verification_payload.get("facts", [])}
-    for claim in claims:
-        fact = fact_map.get(claim.get("claim_id", ""))
-        if not fact:
+def _flow_text(flows: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for index, item in enumerate(flows, start=1):
+        step = str(item.get("step", "")).strip()
+        if not step:
             continue
-        locations = fact.get("evidence_locations", [])
-        if locations:
-            claim["evidence_locations"] = locations
-        claim["verification_status"] = fact.get("status", "")
-    return claims
+        lines.append(f"{index}. **{step}**")
+        what_happens = str(item.get("what_happens", "")).strip()
+        if what_happens:
+            lines.append(f"   What happens: {what_happens}")
+        why = str(item.get("why_it_matters", "")).strip()
+        if why:
+            lines.append(f"   Why it matters: {why}")
+    return "\n".join(lines) if lines else "1. No primary flow explanation available."
+
+
+def _diagram_text(diagram_briefs: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for item in diagram_briefs:
+        diagram_id = str(item.get("id", "")).strip()
+        if not diagram_id:
+            continue
+        caption = str(item.get("caption", "")).strip()
+        takeaway = str(item.get("takeaway", "")).strip()
+        lines.append(f"- `{diagram_id}.svg`: {caption}")
+        if takeaway:
+            lines.append(f"  Read it to answer: {takeaway}")
+    return "\n".join(lines) if lines else "- No diagram briefs available."
+
+
+def _evidence_block(plan_payload: Dict[str, Any], docs_payload: Dict[str, Any], entry_payload: Dict[str, Any]) -> str:
+    lines: List[str] = []
+    summary_doc = str(plan_payload.get("summary_seed_doc", "")).strip()
+    if summary_doc:
+        lines.append(f"- Primary doc used for intent: `{summary_doc}`")
+    entrypoints = entry_payload.get("entrypoints", [])
+    if entrypoints:
+        lines.append(f"- Primary entrypoint: `{entrypoints[0].get('path', '')}`")
+    parsed_docs = docs_payload.get("parsed_docs", [])
+    if parsed_docs:
+        extra = [f"`{doc.get('path', '')}`" for doc in parsed_docs[:4] if doc.get("path")]
+        if extra:
+            lines.append(f"- Additional docs: {', '.join(extra)}")
+    return "\n".join(lines) if lines else "- No strong evidence anchors were available."
+
+
+def _dependencies_text(dep_payload: Dict[str, Any]) -> str:
+    manifests = dep_payload.get("external_dependencies", {})
+    if not manifests:
+        return "_No dependency manifests were parsed._"
+    sections: List[str] = []
+    for manifest, deps in manifests.items():
+        sections.append(f"### `{manifest}`")
+        if deps:
+            sections.append(_bullets([f"`{dep}`" for dep in deps[:30]]))
+        else:
+            sections.append("- No dependencies parsed")
+        sections.append("")
+    sections.append(f"Internal import edges detected: **{dep_payload.get('internal_edge_count', 0)}**")
+    return "\n".join(sections).strip()
+
+
+def _glossary_text(stack_payload: Dict[str, Any], dep_payload: Dict[str, Any], modules: List[Dict[str, Any]], docs_payload: Dict[str, Any]) -> str:
+    entries: List[str] = []
+    for framework in stack_payload.get("frameworks", [])[:6]:
+        entries.append(f"- **{framework}**: Framework detected in the repository dependencies.")
+    entries.append(f"- **{stack_payload.get('architecture_pattern', 'Architecture')}**: Detected repository organization pattern.")
+    for item in modules[:5]:
+        name = str(item.get("name", "")).strip()
+        responsibility = str(item.get("responsibility", "") or item.get("responsibility_hint", "")).strip()
+        if name and responsibility:
+            entries.append(f"- **{name}**: {responsibility}")
+    for manifest in dep_payload.get("external_dependencies", {}).keys():
+        entries.append(f"- **{manifest}**: Dependency manifest parsed during analysis.")
+    for doc in docs_payload.get("parsed_docs", [])[:4]:
+        title = str(doc.get("title", "")).strip()
+        path = str(doc.get("path", "")).strip()
+        if title and path:
+            entries.append(f"- **{title}**: Documentation source at `{path}`.")
+    return "\n".join(dict.fromkeys(entries)) if entries else "- No glossary terms extracted."
 
 
 def generate_docs(
@@ -221,146 +222,230 @@ def generate_docs(
     docs_payload: Dict[str, Any],
     llm_payload: Dict[str, Any],
     context_payload: Dict[str, Any],
+    plan_payload: Dict[str, Any],
     verification_payload: Dict[str, Any],
     enrichment_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
-    del templates_root
-    del context_payload
-    del enrichment_payload
-
+    del templates_root, context_payload, verification_payload, enrichment_payload
     overview_dir = common.ensure_dir(output_root / "overview")
     deep_dir = common.ensure_dir(output_root / "deep")
+    wrote_markdown = output_format in {"markdown", "both"}
 
     repo_name = stack_payload.get("repo_name", common.detect_repo_name(source, output_root))
-    architecture_raw = stack_payload.get("architecture_pattern", "Unknown")
-    architecture_human = (
-        f"Custom project layout (detector label: {architecture_raw})"
-        if architecture_raw == "Custom/Undetected"
-        else architecture_raw
-    )
-    languages = stack_payload.get("languages", {})
-    lang_line = ", ".join([f"{k} ({v})" for k, v in list(languages.items())[:6]]) or "Unknown"
-    framework_line = ", ".join(stack_payload.get("frameworks", [])[:8]) or "None detected"
-    summary = _plain_summary(
-        repo_name, audience, stack_payload, docs_payload, llm_payload, index_payload, flow_payload
-    )
-    directory_map = _directory_map(index_payload, max_items=8 if overview_length == "long" else 6)
-    lifecycle = flow_payload.get("request_lifecycle", [])
-    lifecycle_line = " -> ".join([str(s) for s in lifecycle]) if lifecycle else "No clear flow was extracted in this run"
-    critical_paths = _critical_path_text(flow_payload, limit=6 if mode == "deep" else 4)
-    entrypoints_table = _entrypoints_table(entry_payload.get("entrypoints", []))
-    diagram_links = _diagram_links(diagram_manifest)
-    llm_notes = _llm_notes(llm_payload)
+    summary = _repo_summary(repo_name, stack_payload, llm_payload, plan_payload)
+    pitch = str(llm_payload.get("elevator_pitch", "")).strip()
+    modules = _module_explanations(llm_payload, plan_payload)
+    flows = _flow_explanations(llm_payload, plan_payload)
+    diagram_briefs = _diagram_briefs(llm_payload, plan_payload)
+    audience_start = llm_payload.get("audience_start_here", []) if isinstance(llm_payload.get("audience_start_here", []), list) else []
+    if not audience_start:
+        audience_start = plan_payload.get("start_here", [])
+    caveats = llm_payload.get("caveats", []) if isinstance(llm_payload.get("caveats", []), list) and llm_payload.get("caveats", []) else plan_payload.get("caveats", [])
+    confidence_notes = llm_payload.get("confidence_notes", []) if isinstance(llm_payload.get("confidence_notes", []), list) else []
 
-    overview_text = f"""# {repo_name}: Start Here
+    architecture_pattern = stack_payload.get("architecture_pattern", "Unknown")
+    languages = ", ".join([f"{lang} ({count})" for lang, count in list(stack_payload.get("languages", {}).items())[:5]]) or "Unknown"
+    frameworks = ", ".join(stack_payload.get("frameworks", [])[:6]) or "None detected"
+    primary_flow_summary = " -> ".join(plan_payload.get("primary_flow_steps", [])[:6]) or "Not confidently extracted"
+    diagram_index_text = _diagram_text(diagram_briefs)
+    evidence_block = _evidence_block(plan_payload, docs_payload, entry_payload)
 
-Generated: {common.now_iso()}  
-Source: `{source}`  
-Mode: `{mode}`  
-Audience: `{audience}`  
-Explainer type: `{analysis_type}`
+    overview_text = f"""# {repo_name}: Overview
+
+Generated: {common.now_iso()}
+Source: `{source}`
+Mode: `{mode}`
+Audience: `{audience}`
+Analysis type: `{analysis_type}`
+Length profile: `{overview_length}`
 
 ## What This Repository Does
 
 {summary}
 
-## Quick Facts
+{pitch}
 
-- Overall project shape: **{architecture_human}**
-- Main coding language(s): **{lang_line}**
-- Key framework(s): **{framework_line}**
-- Starting file(s) found: **{entry_payload.get("count", len(entry_payload.get("entrypoints", [])))}**
-- File links mapped: **{dep_payload.get("internal_edge_count", 0)}**
+## How The Codebase Is Organized
 
-## Directory Map (Plain Language)
+- Detected architecture: **{architecture_pattern}**
+- Languages: {languages}
+- Frameworks: {frameworks}
 
-{directory_map}
+{_module_cards_text(modules, max_items=5)}
 
-## How Information Flows
+## Core Request Or Product Flow
 
-`{lifecycle_line}`
+{_flow_text(flows[:5])}
 
-## If You Are New, Start Here
+Primary extracted flow: `{primary_flow_summary}`
 
-1. Open `../diagrams/svg/primary_user_flow.svg`.
-2. Read `../deep/SYSTEM_DEEP_DIVE.md`.
-3. Use `../meta/verification_checkpoint.json` when you need evidence for specific claims.
+## Where To Start
+
+{_numbered([str(item) for item in audience_start])}
+
+## Diagram Guide
+
+{diagram_index_text}
+
+## Evidence Used
+
+{evidence_block}
+
+## Caveats And Confidence
+
+{_bullets([str(item) for item in caveats], fallback='- No major caveats recorded.')}
+
+{_bullets([str(item) for item in confidence_notes], fallback='- Confidence is based on extracted repository evidence.')}
+
+## Deep Dive Links
+
+- [Architecture](../deep/ARCHITECTURE_DEEP.md)
+- [Modules](../deep/MODULES_DEEP.md)
+- [Flows](../deep/FLOWS_DEEP.md)
+- [Dependencies](../deep/DEPENDENCIES_DEEP.md)
+- [Glossary](../deep/GLOSSARY.md)
 """
 
-    deep_text = f"""# {repo_name}: System Deep Dive
+    architecture_text = f"""# Architecture Deep Explainer
 
 Generated: {common.now_iso()}
 
-## 1) What Happens From Start To Finish
+## System Thesis
 
-`{lifecycle_line}`
+{summary}
 
-## 2) Important Journeys Through The Code
+## Why This Shape Matters
 
-{critical_paths}
+- Detected architecture: **{architecture_pattern}**
+- Dominant stack: {frameworks}
+- Main languages: {languages}
 
-## 3) Best Files To Open First
+## Entrypoints
 
-{entrypoints_table}
+{_bullets([f"`{item.get('path', '')}` - {item.get('kind', '')}" for item in entry_payload.get('entrypoints', [])[:10]], fallback='- No clear entrypoints detected.')}
 
-## 4) What Each Main Folder Is Responsible For
+## Main Building Blocks
 
-{directory_map}
+{_module_cards_text(modules, max_items=8)}
 
-## 5) Visual Maps
+## Diagram Intent
 
-{diagram_links}
+{diagram_index_text}
 
-## 6) How Reliable This Explanation Is
+## Evidence
 
-- Docs parsed: **{docs_payload.get("parsed_count", 0)}/{docs_payload.get("discovered_count", 0)}**
-- Diagram count: **{diagram_manifest.get("count", 0)}**
-- Quality checks: `../meta/quality_report.json`
-- Fact checks: `../meta/fact_check_report.json`
-- AI notes:
-{llm_notes}
+{evidence_block}
 """
 
-    wrote_markdown = output_format in {"markdown", "both"}
+    modules_text = f"""# Modules Deep Explainer
+
+Generated: {common.now_iso()}
+
+## Module Cards
+
+{_module_cards_text(modules, max_items=10)}
+
+## Safe Change Guidance
+
+{_bullets([str(item.get('why_it_matters', '') or item.get('change_hint', '')) for item in modules[:8]], fallback='- No change guidance available.')}
+
+## Documentation Anchors
+
+{_bullets([f"`{doc.get('path', '')}` - {doc.get('title', '')}" for doc in docs_payload.get('parsed_docs', [])[:8]], fallback='- No parsed documentation anchors.')}
+"""
+
+    critical_paths = []
+    for item in flow_payload.get("critical_paths", [])[:6]:
+        steps = " -> ".join(item.get("steps", [])[:8])
+        if steps:
+            critical_paths.append(f"**{item.get('name', 'Critical path')}**: {steps}")
+
+    flows_text = f"""# Flows Deep Explainer
+
+Generated: {common.now_iso()}
+
+## Main Flow
+
+{_flow_text(flows[:8])}
+
+## Request Lifecycle
+
+{_bullets([str(item) for item in flow_payload.get('request_lifecycle', [])], fallback='- No request lifecycle extracted.')}
+
+## Critical Paths
+
+{_bullets(critical_paths, fallback='- No critical paths extracted.')}
+
+## Trust Boundaries
+
+{_bullets([f"{item.get('name', '')} ({item.get('type', '')})" for item in flow_payload.get('trust_boundaries', [])], fallback='- No trust boundaries extracted.')}
+"""
+
+    dependencies_text = f"""# Dependencies Deep Explainer
+
+Generated: {common.now_iso()}
+
+## External Dependencies
+
+{_dependencies_text(dep_payload)}
+
+## Dependency Risk Notes
+
+- Review networking, auth, and persistence packages first.
+- Shared modules shown in `module_dependency_graph.svg` are higher-risk edit points.
+- Treat sparse import edges as a signal to verify boundaries manually.
+"""
+
+    glossary_text = f"""# Glossary
+
+Generated: {common.now_iso()}
+
+{_glossary_text(stack_payload, dep_payload, modules, docs_payload)}
+"""
+
     if wrote_markdown:
-        (overview_dir / "OVERVIEW.md").write_text(overview_text.strip() + "\n", encoding="utf-8")
-        (deep_dir / "SYSTEM_DEEP_DIVE.md").write_text(deep_text.strip() + "\n", encoding="utf-8")
+        (overview_dir / "OVERVIEW.md").write_text(overview_text, encoding="utf-8")
+        (deep_dir / "ARCHITECTURE_DEEP.md").write_text(architecture_text, encoding="utf-8")
+        (deep_dir / "MODULES_DEEP.md").write_text(modules_text, encoding="utf-8")
+        (deep_dir / "FLOWS_DEEP.md").write_text(flows_text, encoding="utf-8")
+        (deep_dir / "DEPENDENCIES_DEEP.md").write_text(dependencies_text, encoding="utf-8")
+        (deep_dir / "GLOSSARY.md").write_text(glossary_text, encoding="utf-8")
 
     claims = [
         common.collect_claim(
             "claim_primary_language",
             f"Primary language appears to be {stack_payload.get('primary_language', 'Unknown')}.",
-            ["meta/index.json", "meta/stack.json"],
-            0.88,
-            "Derived from extension distribution.",
-        ),
-        common.collect_claim(
-            "claim_entrypoints",
-            f"Detected {entry_payload.get('count', 0)} likely entrypoints.",
-            ["meta/entrypoints.json"],
-            0.82,
-            "Entrypoint scoring based on bootstrap and filename signals.",
-        ),
-        common.collect_claim(
-            "claim_flow",
-            "Primary lifecycle and critical paths were extracted from orchestration and dependency signals.",
-            ["meta/flows.json", "meta/dependencies.json"],
-            0.8,
-            "Combines AST call extraction with dependency path tracing.",
-        ),
-        common.collect_claim(
-            "claim_docs_coverage",
-            f"Parsed {docs_payload.get('parsed_count', 0)} of {docs_payload.get('discovered_count', 0)} docs.",
-            ["meta/coverage_report.json"],
+            ["meta/stack.json"],
             0.9,
-            "Deterministic documentation ingestion.",
+            "Derived from file extension distribution.",
         ),
         common.collect_claim(
-            "claim_diagrams",
-            f"Generated {diagram_manifest.get('count', 0)} diagrams.",
-            ["meta/diagram_manifest.json", "meta/render_report.json"],
-            0.95,
-            "Deterministic diagram build and render artifacts.",
+            "claim_architecture",
+            f"Detected architecture pattern is {architecture_pattern}.",
+            ["meta/stack.json"],
+            0.76,
+            "Heuristic architecture detection plus module structure.",
+        ),
+        common.collect_claim(
+            "claim_top_modules",
+            "The explainer names major modules and gives change guidance.",
+            ["meta/explanation_plan.json", "overview/OVERVIEW.md", "deep/MODULES_DEEP.md"],
+            0.86,
+            "Module cards are generated from explicit module evidence.",
+        ),
+        common.collect_claim(
+            "claim_start_here",
+            "The explainer provides audience-specific starting points.",
+            ["meta/explanation_plan.json", "overview/OVERVIEW.md"],
+            0.84,
+            "Start-here guidance is generated from detected entrypoints, modules, and audience.",
+        ),
+        common.collect_claim(
+            "claim_diagram_set",
+            f"Generated {diagram_manifest.get('count', 0)} diagrams with explicit narrative purpose.",
+            ["meta/diagram_manifest.json", "overview/OVERVIEW.md"],
+            0.94,
+            "Diagram briefs are tied to onboarding questions.",
         ),
     ]
 
@@ -368,19 +453,23 @@ Generated: {common.now_iso()}
         claims.append(
             common.collect_claim(
                 "claim_llm_narrative",
-                "LLM-assisted narrative summary was included.",
-                ["meta/llm_summary.json"],
-                0.72,
-                "LLM generation built from bounded repository context.",
+                "The output incorporates an explanation-first narrative layer.",
+                ["meta/llm_summary.json", "overview/OVERVIEW.md"],
+                0.82,
+                "Narrative is generated before doc assembly and reflected in the output.",
             )
         )
-
-    claims = _apply_verification_evidence(claims, verification_payload)
 
     payload = {
         "generated_at": common.now_iso(),
         "overview_file": "overview/OVERVIEW.md" if wrote_markdown else "",
-        "deep_files": ["deep/SYSTEM_DEEP_DIVE.md"] if wrote_markdown else [],
+        "deep_files": [
+            "deep/ARCHITECTURE_DEEP.md",
+            "deep/MODULES_DEEP.md",
+            "deep/FLOWS_DEEP.md",
+            "deep/DEPENDENCIES_DEEP.md",
+            "deep/GLOSSARY.md",
+        ] if wrote_markdown else [],
         "output_format": output_format,
         "analysis_type": analysis_type,
         "wrote_markdown": wrote_markdown,
@@ -394,7 +483,7 @@ Generated: {common.now_iso()}
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate markdown explainers.")
+    parser = argparse.ArgumentParser(description="Generate grounded repository explainers.")
     parser.add_argument("--source", required=True)
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--templates-root", required=True)
@@ -412,6 +501,7 @@ def main() -> int:
     parser.add_argument("--coverage", required=True)
     parser.add_argument("--llm-summary", required=True)
     parser.add_argument("--explainer-context", required=True)
+    parser.add_argument("--explanation-plan", required=True)
     parser.add_argument("--verification", required=True)
     parser.add_argument("--enrichment", required=True)
     args = parser.parse_args()
@@ -434,6 +524,7 @@ def main() -> int:
         docs_payload=common.read_json(Path(args.coverage), default={}),
         llm_payload=common.read_json(Path(args.llm_summary), default={}),
         context_payload=common.read_json(Path(args.explainer_context), default={}),
+        plan_payload=common.read_json(Path(args.explanation_plan), default={}),
         verification_payload=common.read_json(Path(args.verification), default={}),
         enrichment_payload=common.read_json(Path(args.enrichment), default={}),
     )

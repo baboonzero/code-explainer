@@ -20,6 +20,7 @@ import map_dependencies
 import map_flows
 import ingest_docs
 import explainer_context
+import explanation_plan
 import verification_checkpoint
 import llm_describe
 import build_diagrams
@@ -28,7 +29,6 @@ import render_diagrams
 import enrich_external
 import generate_docs
 import generate_html
-import compact_output
 import fact_check
 import quality_gate
 
@@ -88,14 +88,12 @@ def _write_manifest(
     audience: str,
     overview_length: str,
     output_format: str,
-    output_layout: str,
     analysis_type: str,
     repo_root: Path,
     stack_payload: Dict[str, Any],
     entry_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
     llm_payload: Dict[str, Any],
-    llm_mode: str,
     verification_payload: Dict[str, Any],
     html_payload: Dict[str, Any],
     fact_check_payload: Dict[str, Any],
@@ -103,7 +101,6 @@ def _write_manifest(
     diagram_count: int,
     include_globs: List[str],
     exclude_globs: List[str],
-    compact_entry_files: List[str],
 ) -> None:
     manifest = {
         "source": source,
@@ -114,7 +111,6 @@ def _write_manifest(
         "audience": audience,
         "overview_length": overview_length,
         "output_format": output_format,
-        "output_layout": output_layout,
         "analysis_type": analysis_type,
         "languages": stack_payload.get("languages", {}),
         "frameworks": stack_payload.get("frameworks", []),
@@ -123,7 +119,6 @@ def _write_manifest(
         "docs_parsed": docs_payload.get("parsed_count", 0),
         "llm_descriptions_enabled": llm_payload.get("enabled", False),
         "llm_descriptions_used": llm_payload.get("used", False),
-        "llm_mode": llm_mode,
         "llm_model": llm_payload.get("model", ""),
         "verification_fact_count": verification_payload.get("fact_count", 0),
         "fact_check_passed": fact_check_payload.get("passed", False),
@@ -132,43 +127,8 @@ def _write_manifest(
         "diagram_count": diagram_count,
         "include_globs": include_globs,
         "exclude_globs": exclude_globs,
-        "compact_entry_files": compact_entry_files,
     }
     common.write_json(output_root / "meta" / "analysis_manifest.json", manifest)
-
-
-def _default_output_root(source: str) -> Path:
-    stripped = (source or "").strip()
-    if common.is_github_url(stripped):
-        return (Path.cwd() / "code-explainer-output").resolve()
-    source_path = Path(stripped).resolve()
-    if source_path.exists() and source_path.is_dir():
-        return (source_path / "code-explainer-output").resolve()
-    return (Path.cwd() / "code-explainer-output").resolve()
-
-
-def _repo_relative_if_nested(path: Path, repo_root: Path) -> str:
-    try:
-        rel = path.resolve().relative_to(repo_root.resolve()).as_posix()
-    except Exception:
-        return ""
-    if not rel or rel == ".":
-        return ""
-    return rel
-
-
-def _clear_generated_paths(root: Path, names: List[str]) -> None:
-    for name in names:
-        target = root / name
-        if not target.exists():
-            continue
-        if target.is_dir():
-            shutil.rmtree(target, ignore_errors=True)
-        else:
-            try:
-                target.unlink()
-            except Exception:
-                pass
 
 
 def run_pipeline(
@@ -178,10 +138,9 @@ def run_pipeline(
     audience: str,
     overview_length: str,
     output_format: str,
-    output_layout: str,
     analysis_type: str,
     enable_web_enrichment: bool,
-    llm_mode: str,
+    enable_llm_descriptions: bool,
     ask_before_llm_use: bool = False,
     prompt_for_llm_key: bool = False,
     include_globs: List[str] | None = None,
@@ -190,59 +149,29 @@ def run_pipeline(
     git_ref: str = "main",
     plan_file: str = "",
 ) -> Dict[str, Any]:
+    output_root = common.ensure_dir(output_root)
+    meta_dir = common.ensure_dir(output_root / "meta")
+    diagrams_dir = common.ensure_dir(output_root / "diagrams")
+    common.ensure_dir(output_root / "overview")
+    common.ensure_dir(output_root / "deep")
+    common.ensure_dir(output_root / "diagrams" / "svg")
+    common.ensure_dir(output_root / "diagrams" / "png")
+    common.ensure_dir(output_root / "html")
+
     repo_root, should_cleanup, cleanup_root = _resolve_source(source)
     try:
-        output_root = common.ensure_dir(output_root)
-        output_layout = (output_layout or "compact").strip().lower()
-        if output_layout not in {"compact", "full"}:
-            output_layout = "compact"
-        artifact_root = output_root if output_layout == "full" else output_root / "evidence"
-
-        if output_layout == "compact":
-            _clear_generated_paths(
-                output_root,
-                [
-                    "evidence",
-                    "meta",
-                    "overview",
-                    "deep",
-                    "diagrams",
-                    "html",
-                    "START_HERE.md",
-                    "SYSTEM_DEEP_DIVE.md",
-                    "ONBOARDING.html",
-                ],
-            )
-        _clear_generated_paths(artifact_root, ["meta", "overview", "deep", "diagrams", "html"])
-
-        meta_dir = common.ensure_dir(artifact_root / "meta")
-        diagrams_dir = common.ensure_dir(artifact_root / "diagrams")
-        common.ensure_dir(artifact_root / "overview")
-        common.ensure_dir(artifact_root / "deep")
-        common.ensure_dir(artifact_root / "diagrams" / "svg")
-        common.ensure_dir(artifact_root / "diagrams" / "png")
-        common.ensure_dir(artifact_root / "html")
-
         include_globs = include_globs or []
         exclude_globs = exclude_globs or []
-        effective_exclude_globs = list(exclude_globs)
-        for candidate in [output_root, artifact_root]:
-            rel = _repo_relative_if_nested(candidate, repo_root)
-            if rel:
-                pattern = f"{rel}/**"
-                if pattern not in effective_exclude_globs:
-                    effective_exclude_globs.append(pattern)
-
         index_payload = index_repo.build_index(
             repo_root,
             meta_dir,
             include_globs=include_globs,
-            exclude_globs=effective_exclude_globs,
+            exclude_globs=exclude_globs,
         )
         stack_payload = detect_stack.analyze_stack(repo_root, index_payload, meta_dir)
         entry_payload = map_entrypoints.map_entrypoints(index_payload, repo_root, meta_dir)
         dep_payload = map_dependencies.map_dependencies(repo_root, index_payload, meta_dir)
-        flow_payload = map_flows.map_flows(repo_root, stack_payload, entry_payload, dep_payload, meta_dir, mode)
+        flow_payload = map_flows.map_flows(stack_payload, entry_payload, dep_payload, meta_dir, mode)
         coverage_payload = ingest_docs.ingest_docs(repo_root, index_payload, meta_dir, mode)
         context_payload = explainer_context.build_explainer_context(
             repo_root=repo_root,
@@ -253,8 +182,23 @@ def run_pipeline(
             git_ref=git_ref,
             plan_file=plan_file,
         )
+        plan_payload = explanation_plan.build_explanation_plan(
+            repo_root=repo_root,
+            source=source,
+            audience=audience,
+            mode=mode,
+            analysis_type=analysis_type,
+            index_payload=index_payload,
+            stack_payload=stack_payload,
+            entry_payload=entry_payload,
+            dep_payload=dep_payload,
+            flow_payload=flow_payload,
+            docs_payload=coverage_payload,
+            context_payload=context_payload,
+            out_dir=meta_dir,
+        )
         verification_payload = verification_checkpoint.build_verification_checkpoint(
-            output_root=artifact_root,
+            output_root=output_root,
             source=source,
             analysis_type=analysis_type,
             stack_payload=stack_payload,
@@ -264,6 +208,7 @@ def run_pipeline(
             flow_payload=flow_payload,
             docs_payload=coverage_payload,
             context_payload=context_payload,
+            plan_payload=plan_payload,
         )
 
         enrichment_payload = enrich_external.enrich_external(source, meta_dir, enable_web_enrichment)
@@ -280,8 +225,9 @@ def run_pipeline(
             flow_payload=flow_payload,
             docs_payload=coverage_payload,
             context_payload=context_payload,
+            plan_payload=plan_payload,
             out_dir=meta_dir,
-            llm_mode=llm_mode,
+            enabled=enable_llm_descriptions,
             ask_before_use=ask_before_llm_use,
             prompt_for_key=prompt_for_llm_key,
         )
@@ -291,15 +237,16 @@ def run_pipeline(
             modules=index_payload.get("modules", []),
             deps=dep_payload,
             flows=flow_payload,
+            plan_payload=plan_payload,
             diagrams_dir=diagrams_dir,
             mode=mode,
         )
 
         validation_payload = validate_mermaid.validate_mermaid(diagrams_dir, meta_dir)
-        render_payload = render_diagrams.render_diagrams(diagrams_dir, artifact_root / "diagrams", theme="neutral")
+        render_payload = render_diagrams.render_diagrams(diagrams_dir, output_root / "diagrams", theme="neutral")
 
         docs_gen_payload = generate_docs.generate_docs(
-            output_root=artifact_root,
+            output_root=output_root,
             templates_root=SCRIPT_DIR.parent / "assets" / "templates",
             source=source,
             mode=mode,
@@ -316,6 +263,7 @@ def run_pipeline(
             docs_payload=coverage_payload,
             llm_payload=llm_payload,
             context_payload=context_payload,
+            plan_payload=plan_payload,
             verification_payload=verification_payload,
             enrichment_payload=enrichment_payload,
         )
@@ -323,7 +271,7 @@ def run_pipeline(
         html_payload: Dict[str, Any] = {}
         if output_format in {"html", "both"}:
             html_payload = generate_html.generate_html(
-                output_root=artifact_root,
+                output_root=output_root,
                 source=source,
                 mode=mode,
                 audience=audience,
@@ -341,54 +289,41 @@ def run_pipeline(
                 verification_payload=verification_payload,
             )
 
-        _write_confidence_and_attribution(artifact_root, docs_gen_payload, enrichment_payload)
+        _write_confidence_and_attribution(output_root, docs_gen_payload, enrichment_payload)
         fact_check_payload = fact_check.run_fact_check(
-            output_root=artifact_root,
+            output_root=output_root,
             output_format=output_format,
             analysis_type=analysis_type,
             verification_payload=verification_payload,
         )
-
-        compact_payload: Dict[str, Any] = {}
-        if output_layout == "compact":
-            compact_payload = compact_output.build_compact_output(
-                output_root=output_root,
-                artifact_root=artifact_root,
-                source=source,
-                analysis_type=analysis_type,
-            )
-
         _write_manifest(
-            output_root=artifact_root,
+            output_root=output_root,
             source=source,
             mode=mode,
             audience=audience,
             overview_length=overview_length,
             output_format=output_format,
-            output_layout=output_layout,
             analysis_type=analysis_type,
             repo_root=repo_root,
             stack_payload=stack_payload,
             entry_payload=entry_payload,
             docs_payload=coverage_payload,
             llm_payload=llm_payload,
-            llm_mode=llm_mode,
             verification_payload=verification_payload,
             html_payload=html_payload,
             fact_check_payload=fact_check_payload,
             module_count=len(index_payload.get("modules", [])),
             diagram_count=diagram_manifest.get("count", 0),
             include_globs=include_globs,
-            exclude_globs=effective_exclude_globs,
-            compact_entry_files=compact_payload.get("entry_files", []),
+            exclude_globs=exclude_globs,
         )
 
         quality_payload = quality_gate.run_quality_gate(
-            output_root=artifact_root,
+            output_root=output_root,
             mode=mode,
             output_format=output_format,
             analysis_type=analysis_type,
-            llm_mode=llm_mode,
+            audience=audience,
         )
 
         return {
@@ -397,10 +332,8 @@ def run_pipeline(
             "mode": mode,
             "analysis_type": analysis_type,
             "output_format": output_format,
-            "output_layout": output_layout,
             "audience": audience,
             "overview_length": overview_length,
-            "llm_mode": llm_mode,
             "file_count": index_payload.get("file_count", 0),
             "docs_discovered": coverage_payload.get("discovered_count", 0),
             "docs_parsed": coverage_payload.get("parsed_count", 0),
@@ -413,7 +346,6 @@ def run_pipeline(
             "quality_passed": quality_payload.get("passed", False),
             "quality_errors": quality_payload.get("errors", []),
             "quality_warnings": quality_payload.get("warnings", []),
-            "entry_files": compact_payload.get("entry_files", []),
         }
     finally:
         if should_cleanup and cleanup_root:
@@ -424,16 +356,11 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Code-Explainer pipeline entrypoint.")
     parser.add_argument("command", nargs="?", default="analyze", help="Use 'analyze' (default).")
     parser.add_argument("--source", required=True, help="Local folder path or GitHub repository URL")
-    parser.add_argument(
-        "--output",
-        default="",
-        help="Output directory root (optional). Defaults: <local_source>/code-explainer-output or <cwd>/code-explainer-output for GitHub URLs.",
-    )
+    parser.add_argument("--output", required=True, help="Output directory root")
     parser.add_argument("--mode", default="standard", choices=["quick", "standard", "deep"])
     parser.add_argument("--audience", default="nontech", choices=["nontech", "mixed", "engineering"])
     parser.add_argument("--overview-length", default="medium", choices=["short", "medium", "long"])
-    parser.add_argument("--format", default="both", choices=["markdown", "html", "both"])
-    parser.add_argument("--output-layout", default="compact", choices=["compact", "full"])
+    parser.add_argument("--format", default="markdown", choices=["markdown", "html", "both"])
     parser.add_argument(
         "--explainer-type",
         default="onboarding",
@@ -455,10 +382,9 @@ def _parse_args() -> argparse.Namespace:
         help="Glob(s) to exclude from indexing.",
     )
     parser.add_argument("--enable-web-enrichment", default="true")
-    parser.add_argument("--llm-mode", default="auto", choices=["auto", "required", "off"])
-    parser.add_argument("--enable-llm-descriptions", default="")
-    parser.add_argument("--ask-before-llm-use", default="true")
-    parser.add_argument("--prompt-for-llm-key", default="true")
+    parser.add_argument("--enable-llm-descriptions", default="true")
+    parser.add_argument("--ask-before-llm-use", default="false")
+    parser.add_argument("--prompt-for-llm-key", default="false")
     return parser.parse_args()
 
 
@@ -470,23 +396,19 @@ def main() -> int:
 
     mode = common.normalize_mode(args.mode)
     web_enabled = common.bool_from_string(args.enable_web_enrichment)
-    llm_mode = (args.llm_mode or "auto").strip().lower()
-    if args.enable_llm_descriptions.strip():
-        llm_mode = "auto" if common.bool_from_string(args.enable_llm_descriptions) else "off"
+    llm_enabled = common.bool_from_string(args.enable_llm_descriptions)
     ask_before_llm_use = common.bool_from_string(args.ask_before_llm_use)
     prompt_for_llm_key = common.bool_from_string(args.prompt_for_llm_key)
-    output_root = Path(args.output).resolve() if args.output.strip() else _default_output_root(args.source)
     summary = run_pipeline(
         source=args.source,
-        output_root=output_root,
+        output_root=Path(args.output).resolve(),
         mode=mode,
         audience=args.audience,
         overview_length=args.overview_length,
         output_format=args.format,
-        output_layout=args.output_layout,
         analysis_type=args.explainer_type,
         enable_web_enrichment=web_enabled,
-        llm_mode=llm_mode,
+        enable_llm_descriptions=llm_enabled,
         ask_before_llm_use=ask_before_llm_use,
         prompt_for_llm_key=prompt_for_llm_key,
         include_globs=args.include_glob,
@@ -502,10 +424,8 @@ def main() -> int:
         "mode",
         "analysis_type",
         "output_format",
-        "output_layout",
         "audience",
         "overview_length",
-        "llm_mode",
         "file_count",
         "docs_discovered",
         "docs_parsed",
@@ -526,10 +446,6 @@ def main() -> int:
         print("- quality_warnings:")
         for warn in summary["quality_warnings"]:
             print(f"  - {warn}")
-    if summary.get("entry_files"):
-        print("- entry_files:")
-        for entry in summary["entry_files"]:
-            print(f"  - {entry}")
     return 0 if summary.get("quality_passed", False) else 1
 
 

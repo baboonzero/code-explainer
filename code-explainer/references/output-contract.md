@@ -1,51 +1,40 @@
 # Output Contract
 
-`code-explainer` supports two output layouts:
-
-1. `compact` (default)
-2. `full`
-
-## Compact Layout (Default)
-
-Written under `<output>/`:
-
-1. `START_HERE.md`
-2. `SYSTEM_DEEP_DIVE.md`
-3. `ONBOARDING.html` (when `--format html|both`)
-4. `evidence/` containing the full artifact tree listed below
-
-## Full Layout
-
-Written directly under `<output>/`:
+`code-explainer` writes the following deterministic output tree under `<output>/`:
 
 1. `overview/OVERVIEW.md` (when `--format markdown|both`)
-2. `deep/SYSTEM_DEEP_DIVE.md` (when `--format markdown|both`)
-3. `html/ONBOARDING.html` (when `--format html|both`)
-4. `diagrams/*.mmd`
-5. `diagrams/svg/*.svg`
-6. `diagrams/png/*.png`
-7. `meta/analysis_manifest.json`
-8. `meta/confidence_report.json`
-9. `meta/source_attribution.json`
-10. `meta/index.json`
-11. `meta/stack.json`
-12. `meta/entrypoints.json`
-13. `meta/dependencies.json`
-14. `meta/flows.json`
-15. `meta/diagram_manifest.json`
-16. `meta/mermaid_validation.json`
-17. `meta/render_report.json`
-18. `meta/enrichment.json`
-19. `meta/coverage_report.json`
-20. `meta/explainer_context.json`
-21. `meta/verification_checkpoint.json`
-22. `meta/llm_summary.json`
-23. `meta/docs_generation.json`
-24. `meta/html_generation.json` (when `--format html|both`)
-25. `meta/fact_check_report.json`
-26. `meta/content_completeness.json`
-27. `meta/quality_report.json`
-28. `meta/compact_output.json` (when `--output-layout compact`)
+2. `deep/ARCHITECTURE_DEEP.md` (when `--format markdown|both`)
+3. `deep/MODULES_DEEP.md` (when `--format markdown|both`)
+4. `deep/FLOWS_DEEP.md` (when `--format markdown|both`)
+5. `deep/DEPENDENCIES_DEEP.md` (when `--format markdown|both`)
+6. `deep/GLOSSARY.md` (when `--format markdown|both`)
+7. `html/ONBOARDING.html` (when `--format html|both`)
+8. `diagrams/*.mmd`
+9. `diagrams/svg/*.svg`
+10. `diagrams/png/*.png`
+11. `meta/analysis_manifest.json`
+12. `meta/confidence_report.json`
+13. `meta/source_attribution.json`
+14. `meta/index.json`
+15. `meta/stack.json`
+16. `meta/entrypoints.json`
+17. `meta/dependencies.json`
+18. `meta/flows.json`
+19. `meta/diagram_manifest.json`
+20. `meta/mermaid_validation.json`
+21. `meta/render_report.json`
+22. `meta/enrichment.json`
+23. `meta/coverage_report.json`
+24. `meta/explainer_context.json`
+25. `meta/verification_checkpoint.json`
+26. `meta/explanation_plan.json`
+27. `meta/llm_summary.json`
+28. `meta/docs_generation.json`
+29. `meta/html_generation.json` (when `--format html|both`)
+30. `meta/fact_check_report.json`
+31. `meta/content_completeness.json`
+32. `meta/explanation_quality.json`
+33. `meta/quality_report.json`
 
 ## Manifest Schema
 
@@ -64,16 +53,13 @@ Written directly under `<output>/`:
 - `audience`
 - `overview_length`
 - `output_format`
-- `output_layout`
 - `analysis_type`
 - `include_globs[]`
 - `exclude_globs[]`
-- `compact_entry_files[]`
 - `docs_discovered`
 - `docs_parsed`
 - `llm_descriptions_enabled`
 - `llm_descriptions_used`
-- `llm_mode`
 - `llm_model`
 - `verification_fact_count`
 - `fact_check_passed`
@@ -123,24 +109,37 @@ Written directly under `<output>/`:
 - `status`
 - `evidence_locations[]` with `path`, `line`, `excerpt`
 
+## Explanation Plan Schema
+
+`explanation_plan.json` contains:
+
+- `repo_name`
+- `summary_seed`
+- `summary_seed_doc`
+- `start_here[]`
+- `top_modules[]` with `name`, `file_count`, `responsibility_hint`, `change_hint`, `sample_paths[]`
+- `primary_flow_steps[]`
+- `diagram_briefs[]`
+- `caveats[]`
+
 ## LLM Narrative Schema
 
 `llm_summary.json` contains:
 
 - `generated_at`
 - `enabled`
-- `llm_mode`
 - `used`
 - `asked_before_use`
-- `consent_granted`
-- `consent_mode`
 - `prompted_for_key`
-- `api_key_source`
 - `provider`
 - `model`
 - `repo_summary_paragraph`
-- `directory_summaries[]` with `name`, `summary`
-- `deep_dive_starters[]`
+- `elevator_pitch`
+- `audience_start_here[]`
+- `module_explanations[]`
+- `flow_explanation_steps[]`
+- `diagram_briefs[]`
+- `caveats[]`
 - `confidence_notes[]`
 - `error`
 
@@ -157,6 +156,17 @@ Written directly under `<output>/`:
 - `passed`
 - `checks[]`
 - `advisory_checks[]`
+
+## Explanation Quality Schema
+
+`explanation_quality.json` contains:
+
+- `score`
+- `passed`
+- `dimensions`
+- `failures[]`
+- `generic_phrase_hits`
+- `avg_overview_sentence_length`
 
 ## Confidence Schema
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-import tempfile
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -51,20 +51,33 @@ def validate_mermaid(diagrams_dir: Path, out_meta_dir: Path) -> Dict[str, Any]:
     mmdc = common.which("mmdc")
     results = []
     overall_ok = True
+    environment_blocked = False
+    temp_root = common.ensure_dir(out_meta_dir / ".validate_tmp")
     for mmd in sorted(diagrams_dir.glob("*.mmd")):
         text = common.read_text(mmd)
         errors: List[str] = []
+        warnings: List[str] = []
         method = "heuristic"
         if mmdc:
             method = "mmdc"
-            with tempfile.TemporaryDirectory(prefix="code_explainer_validate_") as temp_dir:
-                temp_svg = Path(temp_dir) / "out.svg"
-                code, _stdout, stderr = common.run_cmd(
-                    [mmdc, "-i", str(mmd), "-o", str(temp_svg), "-b", "transparent"],
-                    timeout=45,
-                )
-                if code != 0:
-                    errors.append(stderr.strip() or "mmdc validation failed")
+            temp_dir = temp_root / mmd.stem
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            common.ensure_dir(temp_dir)
+            temp_svg = temp_dir / "out.svg"
+            code, _stdout, stderr = common.run_cmd(
+                [mmdc, "-i", str(mmd), "-o", str(temp_svg), "-b", "transparent"],
+                timeout=45,
+            )
+            if code != 0:
+                stderr_text = stderr.strip() or "mmdc validation failed"
+                if common.is_mermaid_environment_failure(stderr_text):
+                    method = "heuristic-fallback"
+                    environment_blocked = True
+                    warnings.append(stderr_text)
+                    errors.extend(_heuristic_validate(text))
+                else:
+                    errors.append(stderr_text)
         else:
             errors.extend(_heuristic_validate(text))
 
@@ -76,6 +89,7 @@ def validate_mermaid(diagrams_dir: Path, out_meta_dir: Path) -> Dict[str, Any]:
                 "ok": ok,
                 "method": method,
                 "errors": errors,
+                "warnings": warnings,
             }
         )
 
@@ -83,9 +97,11 @@ def validate_mermaid(diagrams_dir: Path, out_meta_dir: Path) -> Dict[str, Any]:
         "validated_at": common.now_iso(),
         "validator": "mmdc" if mmdc else "heuristic",
         "overall_ok": overall_ok,
+        "environment_blocked": environment_blocked,
         "results": results,
     }
     common.write_json(out_meta_dir / "mermaid_validation.json", payload)
+    shutil.rmtree(temp_root, ignore_errors=True)
     return payload
 
 

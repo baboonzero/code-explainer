@@ -1,59 +1,92 @@
 # Publishing and Distribution
 
-## 1) Publish to GitHub
+## Publish to GitHub
 
 From repository root:
 
 ```bash
 git add .
-git commit -m "feat: add code-explainer skill"
+git commit -m "feat: rebuild code-explainer around grounded explanation quality"
 git remote add origin https://github.com/<your-org-or-user>/code-explainer.git
 git push -u origin main
 ```
 
-## 2) Verify Install from GitHub
+## What To Verify Before Publishing
 
-Use the Skills CLI install pattern:
+1. The repo-level docs match the shipped skill contract.
+2. `code-explainer/SKILL.md` reflects the current pipeline and proof path.
+3. `python code-explainer/scripts/self_audit.py` passes.
+4. `install_to_codex.ps1` installs the current package cleanly.
+
+Recommended:
 
 ```bash
-npx skills add https://github.com/baboonzero/code-explainer --skill code-explainer
+cd code-explainer
+python scripts/self_audit.py
 ```
 
-Or with Codex system installer script:
+If you want a scored artifact before publishing, also run the local `audit-skill` against `code-explainer/`.
+
+## Install Verification
+
+Install locally into Codex:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_to_codex.ps1
+```
+
+Then restart Codex and confirm the installed copy appears at:
+
+```text
+~/.codex/skills/code-explainer
+```
+
+## Downstream Dependency Note
+
+Users need:
+
+- Python `3.10+`
+- Node.js `18+` and npm
+- Git
+
+Recommended for full diagram rendering:
+
+- Mermaid CLI (`@mermaid-js/mermaid-cli`)
+
+Even without live LLM access, the proof path still works through `CODE_EXPLAINER_MOCK_LLM=true`.
+
+## GitHub Distribution
+
+Suggested install paths for other developers:
+
+Using the Skills CLI:
+
+```bash
+npx skills add https://github.com/<your-org-or-user>/code-explainer --skill code-explainer
+```
+
+Using Codex system installer tooling:
 
 ```bash
 python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo baboonzero/code-explainer \
+  --repo <your-org-or-user>/code-explainer \
   --path code-explainer
 ```
 
-Dependency note for downstream users:
+## Discoverability
 
-- Python 3.10+
-- Node.js 18+ and npm
-- Git
-- Mermaid CLI (`@mermaid-js/mermaid-cli`) for full SVG/PNG rendering
+Suggested GitHub topics:
 
-Point users to:
+- `codex-skill`
+- `agent-skill`
+- `codebase-analysis`
+- `onboarding`
+- `mermaid`
+- `developer-tools`
 
-- `README.md` -> "Dependencies (Required for Skill Installation/Use)"
-- `code-explainer/SKILL.md` -> "Dependencies"
+Useful publishing assets:
 
-## 3) `skills.sh` Listing Expectations
-
-- `skills.sh` tracks install activity from `npx skills` usage.
-- The site updates roughly every 12 hours.
-- Removed/unavailable repos can be pruned from listings.
-
-Practical implication:
-
-1. Publish repo publicly.
-2. Ensure install command works.
-3. Have users install via `npx skills ...` so the skill becomes discoverable through ecosystem tracking.
-
-## 4) Increase Discoverability
-
-1. Add GitHub topics: `agent-skill`, `codex`, `mermaid`, `codebase-analysis`, `onboarding`.
-2. Add a short demo GIF in README showing generated overview + deep docs.
-3. Publish a GitHub release with example outputs.
-4. Share in developer communities with install command and sample output links.
+1. A short README section showing `overview/OVERVIEW.md`
+2. One example diagram image
+3. The self-audit result summary
+4. A release note that explains the rebuild from generic output to proof-backed output

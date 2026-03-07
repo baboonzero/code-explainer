@@ -12,6 +12,8 @@ Target audiences:
 2. Use plain language, then link to deeper details.
 3. Avoid unexplained acronyms.
 4. Keep overview sections concise and actionable.
+5. Tie every important explanation back to a real module, file, flow step, or doc.
+6. Prefer concrete nouns from the repository over generic phrases like "service layer" or "core module".
 
 ## Overview Requirements
 
@@ -21,6 +23,7 @@ Must answer quickly:
 2. Who uses it?
 3. What are the core building blocks?
 4. Where should each audience start?
+5. What is uncertain or weakly supported?
 
 ## Deep Explainer Requirements
 
@@ -38,4 +41,3 @@ Must answer quickly:
   - Prioritize entrypoints, layers, and safe first-change areas.
 - Senior Engineer:
   - Prioritize dependency boundaries, critical paths, and trust boundaries.
-

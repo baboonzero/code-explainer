@@ -4,9 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 import html
-import json
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -41,59 +39,45 @@ def render_diagrams(diagrams_dir: Path, output_dir: Path, theme: str = "neutral"
     mmdc = common.which("mmdc")
 
     results: List[Dict[str, Any]] = []
-    config_path = ""
-    temp_dir = None
-    if mmdc:
-        temp_dir = tempfile.TemporaryDirectory(prefix="code_explainer_mmdc_")
-        config_path = str(Path(temp_dir.name) / "mermaid-render-config.json")
-        config_payload = {
-            "themeVariables": {
-                "fontFamily": "IBM Plex Sans, Segoe UI, Arial",
-                "fontSize": "16px",
-                "lineColor": "#334155",
-                "primaryTextColor": "#111827",
-                "primaryBorderColor": "#334155",
-                "primaryColor": "#f8fafc",
-            },
-            "flowchart": {"nodeSpacing": 55, "rankSpacing": 75, "curve": "basis"},
-            "sequence": {
-                "diagramMarginX": 40,
-                "diagramMarginY": 24,
-                "actorMargin": 70,
-                "width": 180,
-                "height": 76,
-            },
+    for mmd_path in sorted(diagrams_dir.glob("*.mmd")):
+        base = mmd_path.stem
+        svg_path = svg_dir / f"{base}.svg"
+        png_path = png_dir / f"{base}.png"
+        entry = {
+            "diagram": mmd_path.name,
+            "svg": svg_path.name,
+            "png": png_path.name,
+            "renderer": "",
+            "ok": True,
+            "errors": [],
+            "warnings": [],
         }
-        Path(config_path).write_text(json.dumps(config_payload), encoding="utf-8")
-    try:
-        for mmd_path in sorted(diagrams_dir.glob("*.mmd")):
-            base = mmd_path.stem
-            svg_path = svg_dir / f"{base}.svg"
-            png_path = png_dir / f"{base}.png"
-            entry = {"diagram": mmd_path.name, "svg": svg_path.name, "png": png_path.name, "renderer": "", "ok": True, "errors": []}
-            if mmdc:
-                # White background + larger default typography/layout for cleaner onboarding visuals.
-                svg_cmd = [mmdc, "-i", str(mmd_path), "-o", str(svg_path), "-t", theme, "-b", "white", "-s", "1.4", "-C", config_path]
-                png_cmd = [mmdc, "-i", str(mmd_path), "-o", str(png_path), "-t", theme, "-b", "white", "-w", "2200", "-H", "1500", "-s", "1.4", "-C", config_path]
-                code_svg, _out_svg, err_svg = common.run_cmd(svg_cmd, timeout=90)
-                code_png, _out_png, err_png = common.run_cmd(png_cmd, timeout=90)
-                entry["renderer"] = "mmdc"
-                if code_svg != 0 or code_png != 0:
+        source = common.read_text(mmd_path)
+        if mmdc:
+            svg_cmd = [mmdc, "-i", str(mmd_path), "-o", str(svg_path), "-t", theme, "-b", "transparent"]
+            png_cmd = [mmdc, "-i", str(mmd_path), "-o", str(png_path), "-t", theme, "-b", "transparent", "-w", "2400", "-H", "1600", "-s", "2"]
+            code_svg, _out_svg, err_svg = common.run_cmd(svg_cmd, timeout=90)
+            code_png, _out_png, err_png = common.run_cmd(png_cmd, timeout=90)
+            entry["renderer"] = "mmdc"
+            if code_svg != 0 or code_png != 0:
+                combined = "\n".join(part for part in [err_svg.strip(), err_png.strip()] if part)
+                if common.is_mermaid_environment_failure(combined):
+                    svg_path.write_text(_fallback_svg(base, source), encoding="utf-8")
+                    png_path.write_bytes(base64.b64decode(PNG_PLACEHOLDER_B64))
+                    entry["renderer"] = "fallback-after-mmdc-error"
+                    entry["warnings"].append(combined or "mmdc failed; used fallback renderers")
+                else:
                     entry["ok"] = False
                     if err_svg.strip():
                         entry["errors"].append(err_svg.strip())
                     if err_png.strip():
                         entry["errors"].append(err_png.strip())
-            else:
-                source = common.read_text(mmd_path)
-                svg_path.write_text(_fallback_svg(base, source), encoding="utf-8")
-                png_path.write_bytes(base64.b64decode(PNG_PLACEHOLDER_B64))
-                entry["renderer"] = "fallback"
-                entry["errors"].append("mmdc not installed; used fallback renderers")
-            results.append(entry)
-    finally:
-        if temp_dir is not None:
-            temp_dir.cleanup()
+        else:
+            svg_path.write_text(_fallback_svg(base, source), encoding="utf-8")
+            png_path.write_bytes(base64.b64decode(PNG_PLACEHOLDER_B64))
+            entry["renderer"] = "fallback"
+            entry["warnings"].append("mmdc not installed; used fallback renderers")
+        results.append(entry)
 
     payload = {
         "rendered_at": common.now_iso(),

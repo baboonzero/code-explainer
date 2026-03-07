@@ -36,7 +36,7 @@ def _is_interactive_terminal() -> bool:
 
 
 def _confirm_llm_usage() -> bool:
-    answer = input("Use LLM to generate narrative summaries for this run? [y/N]: ").strip().lower()
+    answer = input("Use LLM to generate the explanation narrative for this run? [y/N]: ").strip().lower()
     return answer in {"y", "yes"}
 
 
@@ -57,7 +57,7 @@ def _post_json(url: str, api_key: str, payload: Dict[str, Any], timeout: int = 9
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "code-explainer/1.0",
+            "User-Agent": "code-explainer/2.0",
         },
     )
     try:
@@ -81,14 +81,35 @@ def _extract_json(text: str) -> Dict[str, Any]:
         return parsed if isinstance(parsed, dict) else {}
     except Exception:
         pass
-    m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-    if not m:
+    match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+    if not match:
         return {}
     try:
-        parsed = json.loads(m.group(0))
+        parsed = json.loads(match.group(0))
         return parsed if isinstance(parsed, dict) else {}
     except Exception:
         return {}
+
+
+def _default_llm_payload(enabled: bool, model: str) -> Dict[str, Any]:
+    return {
+        "generated_at": common.now_iso(),
+        "enabled": enabled,
+        "used": False,
+        "asked_before_use": False,
+        "prompted_for_key": False,
+        "provider": "openai_compatible",
+        "model": model,
+        "repo_summary_paragraph": "",
+        "elevator_pitch": "",
+        "audience_start_here": [],
+        "module_explanations": [],
+        "flow_explanation_steps": [],
+        "diagram_briefs": [],
+        "caveats": [],
+        "confidence_notes": [],
+        "error": "",
+    }
 
 
 def _compact_context(
@@ -96,83 +117,62 @@ def _compact_context(
     mode: str,
     audience: str,
     analysis_type: str,
-    index_payload: Dict[str, Any],
     stack_payload: Dict[str, Any],
-    entry_payload: Dict[str, Any],
     dep_payload: Dict[str, Any],
     flow_payload: Dict[str, Any],
-    docs_payload: Dict[str, Any],
-    context_payload: Dict[str, Any],
+    plan_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     modules = []
-    for module in index_payload.get("modules", [])[:20]:
+    for item in plan_payload.get("top_modules", [])[:8]:
         modules.append(
             {
-                "name": module.get("name", ""),
-                "type": module.get("type", ""),
-                "file_count": module.get("file_count", 0),
+                "name": item.get("name", ""),
+                "file_count": item.get("file_count", 0),
+                "responsibility_hint": item.get("responsibility_hint", ""),
+                "change_hint": item.get("change_hint", ""),
+                "sample_paths": item.get("sample_paths", [])[:3],
             }
         )
-    docs = []
-    for doc in docs_payload.get("parsed_docs", [])[:8]:
-        docs.append(
-            {
-                "path": doc.get("path", ""),
-                "title": doc.get("title", ""),
-                "summary": doc.get("summary", "")[:320],
-            }
-        )
-    entrypoints = entry_payload.get("entrypoints", [])[:20]
-    critical_paths = []
-    for path in flow_payload.get("critical_paths", [])[:5]:
-        critical_paths.append(
-            {
-                "name": path.get("name", ""),
-                "steps": path.get("steps", [])[:6],
-            }
-        )
-    external_deps = {}
-    for manifest, deps in dep_payload.get("external_dependencies", {}).items():
-        external_deps[manifest] = deps[:30]
-
     return {
         "source": source,
         "mode": mode,
         "audience": audience,
         "analysis_type": analysis_type,
         "repo_name": stack_payload.get("repo_name", ""),
-        "architecture_pattern": stack_payload.get("architecture_pattern", ""),
         "primary_language": stack_payload.get("primary_language", ""),
-        "languages": stack_payload.get("languages", {}),
         "frameworks": stack_payload.get("frameworks", []),
+        "architecture_pattern": stack_payload.get("architecture_pattern", ""),
+        "entrypoints": plan_payload.get("entrypoints", [])[:8],
+        "primary_flow_steps": plan_payload.get("primary_flow_steps", [])[:8],
         "modules": modules,
-        "entrypoints": entrypoints,
-        "critical_paths": critical_paths,
+        "docs_used": plan_payload.get("docs_used", [])[:6],
+        "start_here": plan_payload.get("start_here", [])[:4],
+        "diagram_briefs": plan_payload.get("diagram_briefs", [])[:8],
+        "caveats": plan_payload.get("caveats", [])[:6],
+        "external_dependencies": dep_payload.get("external_dependencies", {}),
         "request_lifecycle": flow_payload.get("request_lifecycle", []),
-        "docs": docs,
-        "external_dependencies": external_deps,
-        "internal_edge_count": dep_payload.get("internal_edge_count", 0),
-        "mode_context": context_payload,
     }
 
 
 def _request_messages(context_payload: Dict[str, Any]) -> List[Dict[str, str]]:
     system_prompt = (
-        "You are a repository onboarding analyst. "
-        "Return strict JSON only, no markdown. "
-        "Target audience includes PMs, designers, and new engineers. "
-        "Do not invent facts not present in context. "
-        "If uncertain, state uncertainty explicitly."
+        "You explain codebases for PMs, designers, and new engineers. "
+        "Return strict JSON only. "
+        "Write in simple, concrete language. "
+        "Do not use filler like 'service layer', 'core module', or 'user goal' unless the context clearly supports it. "
+        "Do not invent facts. If evidence is weak, say so explicitly."
     )
     user_prompt = (
         "Using the context, produce JSON with keys:\n"
-        "repo_summary_paragraph (string, 90-180 words),\n"
-        "directory_summaries (array of objects: name, summary),\n"
-        "deep_dive_starters (array of 3-6 concise bullets),\n"
-        "confidence_notes (array of 2-5 concise notes).\n"
-        "Summaries must be specific and useful for onboarding.\n"
-        "Adapt framing to analysis_type (onboarding/project-recap/plan-review/diff-review).\n"
-        "Limit directory_summaries to top-level modules in context.\n"
+        "repo_summary_paragraph (string, 90-160 words),\n"
+        "elevator_pitch (string, 1-2 sentences),\n"
+        "audience_start_here (array of 3 concise bullets),\n"
+        "module_explanations (array of objects with name, responsibility, why_it_matters, first_file_to_open),\n"
+        "flow_explanation_steps (array of objects with step, what_happens, why_it_matters),\n"
+        "diagram_briefs (array of objects with id, caption, takeaway),\n"
+        "caveats (array of concise caveats),\n"
+        "confidence_notes (array of concise notes).\n"
+        "Use the exact module names and flow steps from context where possible.\n"
         f"Context:\n{json.dumps(context_payload, ensure_ascii=False)}"
     )
     return [
@@ -181,24 +181,73 @@ def _request_messages(context_payload: Dict[str, Any]) -> List[Dict[str, str]]:
     ]
 
 
-def _default_llm_payload(enabled: bool, model: str) -> Dict[str, Any]:
+def _mock_payload(context_payload: Dict[str, Any], model: str) -> Dict[str, Any]:
+    repo_name = context_payload.get("repo_name", "This repository")
+    frameworks = ", ".join(context_payload.get("frameworks", [])[:3]) or context_payload.get("primary_language", "the detected stack")
+    architecture = context_payload.get("architecture_pattern", "a custom structure")
+    summary_seed = ""
+    docs_used = context_payload.get("docs_used", [])
+    if docs_used:
+        summary_seed = str(docs_used[0].get("summary", "")).strip()
+    if not summary_seed:
+        summary_seed = (
+            f"{repo_name} is organized as {architecture.lower()} and appears to be built on {frameworks}. "
+            "This explanation is grounded in repository structure, entrypoints, dependencies, and available docs."
+        )
+
+    module_explanations = []
+    for item in context_payload.get("modules", [])[:6]:
+        samples = item.get("sample_paths", [])
+        module_explanations.append(
+            {
+                "name": item.get("name", ""),
+                "responsibility": item.get("responsibility_hint", ""),
+                "why_it_matters": item.get("change_hint", ""),
+                "first_file_to_open": samples[0] if samples else "",
+            }
+        )
+
+    flow_steps = []
+    for step in context_payload.get("primary_flow_steps", [])[:6]:
+        flow_steps.append(
+            {
+                "step": step,
+                "what_happens": f"This stage advances the main execution path through `{step}`.",
+                "why_it_matters": "Understanding this step helps a new reader follow the core product behavior.",
+            }
+        )
+
+    diagram_briefs = []
+    for item in context_payload.get("diagram_briefs", [])[:6]:
+        diagram_briefs.append(
+            {
+                "id": item.get("id", ""),
+                "caption": item.get("purpose", ""),
+                "takeaway": item.get("reader_question", ""),
+            }
+        )
+
     return {
         "generated_at": common.now_iso(),
-        "enabled": enabled,
-        "llm_mode": "auto",
-        "used": False,
+        "enabled": True,
+        "used": True,
         "asked_before_use": False,
-        "consent_granted": False,
-        "consent_mode": "implicit",
         "prompted_for_key": False,
-        "api_key_source": "none",
-        "provider": "openai_compatible",
+        "provider": "mock_grounded",
         "model": model,
-        "repo_summary_paragraph": "",
-        "directory_summaries": [],
-        "deep_dive_starters": [],
-        "confidence_notes": [],
+        "repo_summary_paragraph": summary_seed,
+        "elevator_pitch": f"{repo_name} is the main system under analysis. Start with the overview, then trace one real flow.",
+        "audience_start_here": context_payload.get("start_here", [])[:3],
+        "module_explanations": module_explanations,
+        "flow_explanation_steps": flow_steps,
+        "diagram_briefs": diagram_briefs,
+        "caveats": context_payload.get("caveats", [])[:5],
+        "confidence_notes": [
+            "This run used the grounded mock explainer path, so wording is deterministic.",
+            "Narrative claims are limited to extracted repository evidence.",
+        ],
         "error": "",
+        "request_context": context_payload,
     }
 
 
@@ -215,87 +264,74 @@ def generate_llm_descriptions(
     flow_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
     context_payload: Dict[str, Any],
+    plan_payload: Dict[str, Any],
     out_dir: Path,
-    llm_mode: str = "auto",
+    enabled: bool = True,
     ask_before_use: bool = False,
     prompt_for_key: bool = False,
 ) -> Dict[str, Any]:
-    llm_mode = (llm_mode or "auto").strip().lower()
-    if llm_mode not in {"auto", "required", "off"}:
-        llm_mode = "auto"
-
+    del repo_root, index_payload, entry_payload, docs_payload
     model = os.environ.get("CODE_EXPLAINER_LLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
-    enabled = llm_mode != "off"
     payload = _default_llm_payload(enabled=enabled, model=model)
-    payload["llm_mode"] = llm_mode
     if not enabled:
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
-    interactive = _is_interactive_terminal()
-    payload["consent_granted"] = True
-    if interactive:
-        payload["consent_mode"] = "interactive"
-    else:
-        payload["consent_mode"] = "non_interactive"
+    request_context = _compact_context(
+        source=source,
+        mode=mode,
+        audience=audience,
+        analysis_type=analysis_type,
+        stack_payload=stack_payload,
+        dep_payload=dep_payload,
+        flow_payload=flow_payload,
+        plan_payload=plan_payload,
+    )
 
+    use_mock = common.bool_from_string(os.environ.get("CODE_EXPLAINER_MOCK_LLM", "false"))
+    if use_mock:
+        payload = _mock_payload(request_context, model="mock-grounded-v1")
+        common.write_json(out_dir / "llm_summary.json", payload)
+        return payload
+
+    interactive = _is_interactive_terminal()
     if ask_before_use:
         payload["asked_before_use"] = True
-        if interactive:
-            payload["consent_granted"] = _confirm_llm_usage()
-            if not payload["consent_granted"]:
-                payload["enabled"] = False
-                if llm_mode == "required":
-                    payload["error"] = "LLM mode is required, but user declined LLM narrative generation."
-                else:
-                    payload["error"] = "User declined LLM narrative generation for this run."
-                common.write_json(out_dir / "llm_summary.json", payload)
-                return payload
+        if not interactive:
+            payload["enabled"] = False
+            payload["error"] = "LLM ask-before-use requested but terminal is non-interactive; skipped."
+            common.write_json(out_dir / "llm_summary.json", payload)
+            return payload
+        if not _confirm_llm_usage():
+            payload["enabled"] = False
+            payload["error"] = "User declined LLM narrative generation for this run."
+            common.write_json(out_dir / "llm_summary.json", payload)
+            return payload
 
     api_key = (
         os.environ.get("CODE_EXPLAINER_LLM_API_KEY", "").strip()
         or os.environ.get("OPENAI_API_KEY", "").strip()
     )
-    if api_key:
-        payload["api_key_source"] = "env"
     if not api_key and prompt_for_key:
         payload["prompted_for_key"] = True
-        if interactive:
-            api_key = _prompt_api_key()
-            if api_key:
-                payload["api_key_source"] = "prompt"
+        if not interactive:
+            payload["error"] = "Prompt-for-key requested but terminal is non-interactive and no key was found."
+            common.write_json(out_dir / "llm_summary.json", payload)
+            return payload
+        api_key = _prompt_api_key()
 
     if not api_key:
-        if llm_mode == "required":
-            payload["error"] = (
-                "LLM mode is required, but no API key was found "
-                "(set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
-            )
-        else:
-            payload["error"] = "No API key found (set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
+        payload["error"] = "No API key found (set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
     base_url = _normalize_base_url(os.environ.get("CODE_EXPLAINER_LLM_BASE_URL", DEFAULT_BASE_URL))
     endpoint = f"{base_url}/chat/completions"
-    context_payload = _compact_context(
-        source=source,
-        mode=mode,
-        audience=audience,
-        analysis_type=analysis_type,
-        index_payload=index_payload,
-        stack_payload=stack_payload,
-        entry_payload=entry_payload,
-        dep_payload=dep_payload,
-        flow_payload=flow_payload,
-        docs_payload=docs_payload,
-        context_payload=context_payload,
-    )
-
     request_payload = {
         "model": model,
-        "temperature": 0.2,
-        "messages": _request_messages(context_payload),
+        "temperature": 0.15,
+        "response_format": {"type": "json_object"},
+        "messages": _request_messages(request_context),
     }
     status, body = _post_json(endpoint, api_key, request_payload)
     if status != 200 or not body:
@@ -310,40 +346,30 @@ def generate_llm_descriptions(
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
-    content = ""
     choices = response_json.get("choices", [])
-    if choices:
-        content = (
-            (choices[0].get("message") or {}).get("content", "")
-            if isinstance(choices[0], dict)
-            else ""
-        )
+    content = ""
+    if choices and isinstance(choices[0], dict):
+        content = ((choices[0].get("message") or {}).get("content", "")) or ""
+
     parsed = _extract_json(content)
     if not parsed:
         payload["error"] = "LLM response content did not include parseable JSON."
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
-    repo_summary = str(parsed.get("repo_summary_paragraph", "")).strip()
-    directory_summaries = parsed.get("directory_summaries", [])
-    deep_dive_starters = parsed.get("deep_dive_starters", [])
-    confidence_notes = parsed.get("confidence_notes", [])
-    if not isinstance(directory_summaries, list):
-        directory_summaries = []
-    if not isinstance(deep_dive_starters, list):
-        deep_dive_starters = []
-    if not isinstance(confidence_notes, list):
-        confidence_notes = []
-
     payload.update(
         {
-            "used": bool(repo_summary or directory_summaries),
-            "repo_summary_paragraph": repo_summary,
-            "directory_summaries": directory_summaries[:20],
-            "deep_dive_starters": [str(x) for x in deep_dive_starters[:8]],
-            "confidence_notes": [str(x) for x in confidence_notes[:8]],
+            "used": True,
+            "repo_summary_paragraph": str(parsed.get("repo_summary_paragraph", "")).strip(),
+            "elevator_pitch": str(parsed.get("elevator_pitch", "")).strip(),
+            "audience_start_here": parsed.get("audience_start_here", [])[:4] if isinstance(parsed.get("audience_start_here", []), list) else [],
+            "module_explanations": parsed.get("module_explanations", [])[:10] if isinstance(parsed.get("module_explanations", []), list) else [],
+            "flow_explanation_steps": parsed.get("flow_explanation_steps", [])[:10] if isinstance(parsed.get("flow_explanation_steps", []), list) else [],
+            "diagram_briefs": parsed.get("diagram_briefs", [])[:10] if isinstance(parsed.get("diagram_briefs", []), list) else [],
+            "caveats": parsed.get("caveats", [])[:6] if isinstance(parsed.get("caveats", []), list) else [],
+            "confidence_notes": parsed.get("confidence_notes", [])[:6] if isinstance(parsed.get("confidence_notes", []), list) else [],
             "error": "",
-            "request_context": context_payload,
+            "request_context": request_context,
         }
     )
     common.write_json(out_dir / "llm_summary.json", payload)
@@ -351,7 +377,7 @@ def generate_llm_descriptions(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate LLM narrative summaries for repository onboarding.")
+    parser = argparse.ArgumentParser(description="Generate grounded repository explanations with an LLM or mock path.")
     parser.add_argument("--repo", required=True)
     parser.add_argument("--source", required=True)
     parser.add_argument("--mode", default="standard")
@@ -364,16 +390,12 @@ def main() -> int:
     parser.add_argument("--flows", required=True)
     parser.add_argument("--coverage", required=True)
     parser.add_argument("--explainer-context", required=True)
+    parser.add_argument("--explanation-plan", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--llm-mode", default="auto", choices=["auto", "required", "off"])
-    parser.add_argument("--enabled", default="")
+    parser.add_argument("--enabled", default="true")
     parser.add_argument("--ask-before-use", default="false")
     parser.add_argument("--prompt-for-key", default="false")
     args = parser.parse_args()
-
-    llm_mode = (args.llm_mode or "auto").strip().lower()
-    if args.enabled.strip():
-        llm_mode = "auto" if common.bool_from_string(args.enabled) else "off"
 
     payload = generate_llm_descriptions(
         repo_root=Path(args.repo).resolve(),
@@ -388,12 +410,13 @@ def main() -> int:
         flow_payload=common.read_json(Path(args.flows), default={}),
         docs_payload=common.read_json(Path(args.coverage), default={}),
         context_payload=common.read_json(Path(args.explainer_context), default={}),
+        plan_payload=common.read_json(Path(args.explanation_plan), default={}),
         out_dir=Path(args.output).resolve(),
-        llm_mode=llm_mode,
+        enabled=common.bool_from_string(args.enabled),
         ask_before_use=common.bool_from_string(args.ask_before_use),
         prompt_for_key=common.bool_from_string(args.prompt_for_key),
     )
-    print(json.dumps({"used": payload.get("used", False), "error": payload.get("error", "")}, indent=2))
+    print(json.dumps({"used": payload.get("used", False), "provider": payload.get("provider", ""), "error": payload.get("error", "")}, indent=2))
     return 0
 
 

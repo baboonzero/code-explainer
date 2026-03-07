@@ -71,6 +71,7 @@ def build_verification_checkpoint(
     flow_payload: Dict[str, Any],
     docs_payload: Dict[str, Any],
     context_payload: Dict[str, Any],
+    plan_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     meta_dir = output_root / "meta"
     stack_path = meta_dir / "stack.json"
@@ -89,6 +90,8 @@ def build_verification_checkpoint(
     docs_discovered = int(docs_payload.get("discovered_count", 0))
     edge_count = int(dep_payload.get("internal_edge_count", 0))
     request_steps = flow_payload.get("request_lifecycle", [])
+    start_here = [str(item).strip() for item in plan_payload.get("start_here", []) if str(item).strip()]
+    top_modules = [item.get("name", "") for item in plan_payload.get("top_modules", []) if item.get("name")]
 
     facts: List[Dict[str, Any]] = [
         _fact(
@@ -100,9 +103,9 @@ def build_verification_checkpoint(
         ),
         _fact(
             "claim_architecture",
-            f"Detected project layout pattern is {architecture_pattern}.",
-            f"Detected project layout pattern is {architecture_pattern}.",
-            ["project", "layout"],
+            f"Detected architecture pattern is {architecture_pattern}.",
+            f"Detected architecture pattern is {architecture_pattern}.",
+            [architecture_pattern.lower()],
             [_location(stack_path, output_root, "architecture_pattern")],
         ),
         _fact(
@@ -157,6 +160,28 @@ def build_verification_checkpoint(
                     [_location(flows_path, output_root, "request_lifecycle")],
                 )
             )
+
+    if start_here:
+        facts.append(
+            _fact(
+                "claim_start_here",
+                "The explainer should provide clear onboarding starting points.",
+                "The explainer should provide clear onboarding starting points.",
+                [start_here[0].lower()],
+                [_location(meta_dir / "explanation_plan.json", output_root, "start_here")],
+            )
+        )
+
+    if top_modules:
+        facts.append(
+            _fact(
+                "claim_top_modules",
+                f"The explainer should mention core modules such as {top_modules[0]}.",
+                f"The explainer should mention core modules such as {top_modules[0]}.",
+                [top_modules[0].lower()],
+                [_location(meta_dir / "explanation_plan.json", output_root, "top_modules")],
+            )
+        )
 
     if analysis_type == "project-recap":
         recap = context_payload.get("project_recap", {})
@@ -221,6 +246,7 @@ def main() -> int:
     parser.add_argument("--flows", required=True)
     parser.add_argument("--coverage", required=True)
     parser.add_argument("--explainer-context", required=True)
+    parser.add_argument("--explanation-plan", required=True)
     args = parser.parse_args()
 
     output_root = Path(args.output_root).resolve()
@@ -235,6 +261,7 @@ def main() -> int:
         flow_payload=common.read_json(Path(args.flows), default={}),
         docs_payload=common.read_json(Path(args.coverage), default={}),
         context_payload=common.read_json(Path(args.explainer_context), default={}),
+        plan_payload=common.read_json(Path(args.explanation_plan), default={}),
     )
     print(json.dumps({"fact_count": payload.get("fact_count", 0)}, indent=2))
     return 0

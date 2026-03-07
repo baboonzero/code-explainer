@@ -1,30 +1,34 @@
 ---
 name: code-explainer
-description: Analyze a local codebase folder or GitHub repository URL and generate a two-tier onboarding explainer (crisp overview + deep-dive docs) with Mermaid, SVG, and PNG diagrams. Use when users need fast, high-fidelity understanding of an unfamiliar repository for PM/designer/new engineer onboarding.
+description: Analyze a local codebase folder or GitHub repository URL and generate a grounded onboarding explainer with clear markdown docs, focused Mermaid/SVG/PNG diagrams, evidence anchors, and explanation-quality scoring. Use when users need a codebase explained in simple, concrete language for PM/design/new engineer onboarding.
 ---
 
 # Code Explainer
 
-Builds onboarding-grade repository explainers from local or GitHub sources.
+Builds explanation-first repository explainers from local folders or GitHub URLs.
 
-## Use Cases
+## What Good Output Looks Like
 
-- New joiners who need a 10-minute understanding of a codebase.
-- PM/design onboarding where code details must be translated to plain language.
-- Engineering onboarding requiring architecture, module, flow, and dependency views.
+A good run must do all of the following:
+
+1. Explain what the repository does in plain language.
+2. Name real entrypoints, modules, docs, and flow steps from the repository.
+3. Tell the reader where to start and where change risk lives.
+4. Produce diagrams that answer specific onboarding questions.
+5. Emit proof artifacts showing whether the explanation is actually useful.
+
+This skill should fail quality gates if the output is generic, vague, or weakly grounded.
 
 ## Output Model
 
-Compact-first output + detailed artifacts:
+1. `overview/OVERVIEW.md` for the plain-language explanation.
+2. `deep/*.md` for architecture, modules, flows, dependencies, and glossary.
+3. `diagrams/*.mmd` plus rendered `diagrams/svg/*.svg` and `diagrams/png/*.png`.
+4. `meta/explanation_plan.json` describing the intended narrative.
+5. `meta/explanation_quality.json` scoring clarity, specificity, grounding, usefulness, diagram usefulness, and honesty.
+6. `meta/*.json` for indexing, verification, confidence, attribution, and quality reports.
 
-1. Compact entry files (default): `START_HERE.md`, `SYSTEM_DEEP_DIVE.md`, `ONBOARDING.html`.
-2. Detailed artifacts under `evidence/` in compact layout.
-3. Optional full layout writes docs/diagrams/meta directly under output root.
-4. Detailed docs include `overview/OVERVIEW.md` and `deep/SYSTEM_DEEP_DIVE.md`.
-5. Diagrams include `.mmd`, `.svg`, and `.png`.
-6. Metadata includes quality, confidence, attribution, verification, and fact-check reports.
-
-See `references/output-contract.md` for exact files and semantics.
+See `references/output-contract.md` for exact artifacts and `references/evaluation-rubric.md` for the passing bar.
 
 ## Command
 
@@ -33,10 +37,9 @@ Run from this skill directory:
 ```bash
 python scripts/analyze.py analyze \
   --source <local_path_or_github_url> \
-  --output <optional_output_dir> \
+  --output <output_dir> \
   --mode <quick|standard|deep> \
   --format <markdown|html|both> \
-  --output-layout <compact|full> \
   --explainer-type <onboarding|project-recap|plan-review|diff-review> \
   --audience <nontech|mixed|engineering> \
   --overview-length <short|medium|long> \
@@ -45,7 +48,7 @@ python scripts/analyze.py analyze \
   --plan-file <path> \
   --include-glob <pattern> \
   --exclude-glob <pattern> \
-  --llm-mode <auto|required|off> \
+  --enable-llm-descriptions <true|false> \
   --ask-before-llm-use <true|false> \
   --prompt-for-llm-key <true|false> \
   --enable-web-enrichment <true|false>
@@ -54,18 +57,42 @@ python scripts/analyze.py analyze \
 Defaults:
 
 - `mode=standard`
-- `format=both`
-- `output-layout=compact`
+- `format=markdown`
 - `explainer-type=onboarding`
 - `audience=nontech`
 - `overview-length=medium`
-- `llm-mode=auto`
-- `ask-before-llm-use=true` (interactive terminals)
-- `prompt-for-llm-key=true` (interactive terminals)
+- `enable-llm-descriptions=true`
+- `ask-before-llm-use=false`
+- `prompt-for-llm-key=false`
 - `enable-web-enrichment=true`
-- `output` is optional:
-- local source -> `<source>/code-explainer-output`
-- GitHub URL -> `<current-working-directory>/code-explainer-output`
+
+## LLM Behavior
+
+- The high-quality path is explanation-first and uses `scripts/llm_describe.py`.
+- If `CODE_EXPLAINER_LLM_API_KEY` or `OPENAI_API_KEY` is set, the skill can use a live model.
+- If live LLM access is unavailable, the pipeline falls back to grounded deterministic wording and records that downgrade in `meta/llm_summary.json`.
+- For proof runs and offline regression tests, set `CODE_EXPLAINER_MOCK_LLM=true` to exercise the full explanation pipeline without network access.
+
+## Workflow
+
+1. Normalize the source and build a repository index.
+2. Detect stack, entrypoints, dependencies, flows, and documentation coverage.
+3. Build `explanation_plan.json` with top modules, audience starting points, diagram purposes, and caveats.
+4. Generate the narrative layer with LLM or grounded mock/deterministic fallback.
+5. Build focused diagrams tied to onboarding questions.
+6. Generate overview and deep docs from the explanation plan plus narrative layer.
+7. Run fact-check and explanation-quality evaluation.
+8. Fail the run if quality gates do not clear the rubric.
+
+## Proof Path
+
+Run the shipped self-audit:
+
+```bash
+python scripts/self_audit.py
+```
+
+This runs the skill on fixture repositories in `assets/fixtures/`, uses the grounded mock explainer path, and writes proof artifacts under `.audit_tmp/code-explainer-self/`.
 
 ## Dependencies
 
@@ -73,11 +100,11 @@ Required:
 
 - Python `3.10+`
 - Node.js `18+` + npm
-- Git (required when `--source` is a GitHub URL)
+- Git when `--source` is a GitHub URL
 
-Recommended for high-quality rendering:
+Recommended:
 
-- Mermaid CLI (`mmdc`) from `@mermaid-js/mermaid-cli`
+- Mermaid CLI (`mmdc`) from `@mermaid-js/mermaid-cli` for higher-fidelity diagram rendering
 
 Install dependencies:
 
@@ -91,44 +118,11 @@ or
 bash ./scripts/install_runtime.sh
 ```
 
-## Workflow
-
-1. Intake and source normalization.
-2. Local index build (files/modules/symbol candidates).
-3. Stack/entrypoint/dependency/flow extraction.
-4. Documentation ingestion (`coverage_report.json`).
-5. Mode-specific context extraction (`explainer_context.json`).
-6. Verification checkpoint generation (`verification_checkpoint.json`).
-7. Optional LLM narrative generation (`llm_summary.json`).
-8. Optional DeepWiki + web enrichment with attribution.
-9. Mermaid generation (Context + Container + flow set).
-10. Mermaid validation.
-11. SVG then PNG rendering.
-12. Markdown and/or HTML explainer generation.
-13. Fact-check pass (`fact_check_report.json`).
-14. Quality gates, completeness checks, and confidence report generation.
-
 ## Notes
 
-- For GitHub URLs, `git` must be available on PATH.
-- For high-fidelity diagram rendering, `mmdc` should be installed.
-- Without `mmdc`, fallback rendering is used and flagged in reports.
-- For LLM narrative summaries, set `CODE_EXPLAINER_LLM_API_KEY` (or `OPENAI_API_KEY`).
-- Optional: set `CODE_EXPLAINER_LLM_BASE_URL` and `CODE_EXPLAINER_LLM_MODEL`.
-- Interactive prompts are supported:
-- `--ask-before-llm-use true`
-- `--prompt-for-llm-key true`
-- If you need strict narrative generation, run with `--llm-mode required`.
-- Legacy flag remains supported: `--enable-llm-descriptions <true|false>`.
-- This skill does not mutate the analyzed target repository.
-
-## Dependency Troubleshooting
-
-- If `mmdc` is not found: run `npm install -g @mermaid-js/mermaid-cli`, open a new terminal, then run `mmdc --version`.
-- If Mermaid rendering fails with browser launch errors: reinstall Mermaid CLI and retry.
-- If global npm install fails with permissions: use an elevated shell (Windows) or a Node version manager (macOS/Linux).
-- If `python` is not found: install Python 3.10+ and ensure it is on `PATH`.
-- If `git` is not found: install Git (required for GitHub URL source mode).
+- This skill does not mutate the analyzed repository.
+- If the explanation-quality score is below the rubric threshold, treat the output as failed even if files were produced.
+- Use include/exclude globs to narrow analysis when the repository is very large or noisy.
 
 ## References
 
@@ -136,3 +130,4 @@ bash ./scripts/install_runtime.sh
 - `references/diagram-style-guide.md`
 - `references/persona-writing-guide.md`
 - `references/mode-behavior.md`
+- `references/evaluation-rubric.md`

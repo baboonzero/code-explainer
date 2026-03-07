@@ -37,8 +37,6 @@ IGNORE_DIRS = {
 DEFAULT_EXCLUDE_GLOBS = [
     ".out*/**",
     ".ci-*/**",
-    "code-explainer-output/**",
-    "**/code-explainer-output/**",
     "output/**",
     "artifacts/**",
     "reports/**",
@@ -111,6 +109,21 @@ def run_cmd(cmd: List[str], cwd: Optional[Path] = None, timeout: int = 60) -> Tu
         check=False,
     )
     return proc.returncode, proc.stdout, proc.stderr
+
+
+def is_mermaid_environment_failure(text: str) -> bool:
+    lowered = (text or "").lower()
+    signals = [
+        "failed to launch the browser process",
+        "browser launch",
+        "spawn eperm",
+        "invalid file descriptor to icu data received",
+        "troubleshooting: https://pptr.dev/troubleshooting",
+        "could not find chrome",
+        "failed to spawn browser",
+        "no usable sandbox",
+    ]
+    return any(signal in lowered for signal in signals)
 
 
 def which(binary: str) -> Optional[str]:
@@ -201,52 +214,13 @@ def top_level_modules(files: Iterable[Dict[str, Any]], max_items: int = 60) -> L
 
         top = path.split("/", 1)[0]
         if top not in buckets:
-            buckets[top] = {
-                "name": top,
-                "type": "directory",
-                "file_count": 0,
-                "total_bytes": 0,
-                "examples": [],
-            }
+            buckets[top] = {"name": top, "type": "directory", "file_count": 0, "total_bytes": 0}
         buckets[top]["file_count"] += 1
         buckets[top]["total_bytes"] += size
-        if len(buckets[top]["examples"]) < 10:
-            buckets[top]["examples"].append(path)
 
-    ranked = sorted(buckets.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True)
-
-    # If one wrapper directory dominates the repo, expose its second-level modules.
-    non_root_file_count = sum(int(m["file_count"]) for m in ranked)
-    if ranked and non_root_file_count > 0:
-        dominant = ranked[0]
-        dominant_ratio = dominant["file_count"] / max(non_root_file_count, 1)
-        if dominant_ratio >= 0.7:
-            dominant_name = str(dominant["name"])
-            nested: Dict[str, Dict[str, Any]] = {}
-            for item in files:
-                path = item["path"]
-                if not path.startswith(f"{dominant_name}/"):
-                    continue
-                parts = path.split("/")
-                if len(parts) < 3:
-                    continue
-                nested_name = parts[1]
-                if nested_name not in nested:
-                    nested[nested_name] = {
-                        "name": nested_name,
-                        "type": "directory",
-                        "file_count": 0,
-                        "total_bytes": 0,
-                        "examples": [],
-                    }
-                nested[nested_name]["file_count"] += 1
-                nested[nested_name]["total_bytes"] += int(item.get("size_bytes", 0))
-                if len(nested[nested_name]["examples"]) < 10:
-                    nested[nested_name]["examples"].append(path)
-            if len(nested) >= 2:
-                nested_ranked = sorted(nested.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True)
-                others = [m for m in ranked[1:]]
-                ranked = nested_ranked + others
+    ranked = sorted(
+        buckets.values(), key=lambda m: (m["file_count"], m["total_bytes"]), reverse=True
+    )
     if root_files["file_count"] > 0:
         ranked.append(root_files)
     return ranked[:max_items]
@@ -309,10 +283,7 @@ def detect_architecture_pattern(repo_root: Path) -> str:
 def _looks_like_python_entrypoint(path: str, text: str) -> Optional[str]:
     lowered = text.lower()
     if "__name__" in text and "__main__" in text:
-        has_main = bool(re.search(r"^\s*def\s+main\s*\(", text, flags=re.MULTILINE))
-        has_cli_signal = any(token in lowered for token in ["argparse", "click.", "typer.", "add_argument("])
-        if has_main or has_cli_signal or Path(path).name.lower() in {"main.py", "app.py", "server.py", "cli.py", "run.py", "analyze.py"}:
-            return "Python main guard"
+        return "Python main guard"
     if re.search(r"^\s*(app|application)\s*=\s*FastAPI\(", text, flags=re.MULTILINE):
         return "FastAPI app bootstrap"
     if re.search(r"^\s*if\s+__name__\s*==\s*[\"']__main__[\"']\s*:", text, flags=re.MULTILINE):

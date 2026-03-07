@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -20,133 +19,12 @@ def _escape(text: str) -> str:
     return html.escape(text or "", quote=True)
 
 
-def _extract_section(markdown_text: str, heading: str) -> str:
-    if not markdown_text.strip():
-        return ""
-    pattern = rf"^##\s+{re.escape(heading)}\s*$([\s\S]*?)(?=^##\s+|\Z)"
-    match = re.search(pattern, markdown_text, flags=re.MULTILINE)
-    return match.group(1).strip() if match else ""
-
-
-def _clean_inline_md(text: str) -> str:
-    out = text
-    out = re.sub(r"`([^`]+)`", r"\1", out)
-    out = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", out)
-    out = re.sub(r"\*\*([^*]+)\*\*", r"\1", out)
-    out = re.sub(r"\*([^*]+)\*", r"\1", out)
-    return out.strip()
-
-
-def _paragraphs_from_markdown(section: str) -> str:
-    blocks = [b.strip() for b in re.split(r"\n\s*\n", section) if b.strip()]
-    rows: List[str] = []
-    for block in blocks:
-        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
-        if not lines:
-            continue
-        if all(re.match(r"^[-*]\s+", ln) or re.match(r"^\d+\.\s+", ln) for ln in lines):
-            continue
-        text = _clean_inline_md(" ".join(lines))
-        if text:
-            rows.append(f"<p>{_escape(text)}</p>")
-    return "\n".join(rows)
-
-
-def _bullet_list_from_markdown(section: str) -> str:
-    items = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        m = re.match(r"^[-*]\s+(.+)$", stripped)
-        if not m:
-            continue
-        items.append(_escape(_clean_inline_md(m.group(1))))
-    if not items:
-        return "<p class='note'>No items available.</p>"
-    lis = "".join([f"<li>{item}</li>" for item in items])
-    return f"<ul>{lis}</ul>"
-
-
-def _numbered_list_from_markdown(section: str) -> str:
-    items = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        m = re.match(r"^\d+\.\s+(.+)$", stripped)
-        if not m:
-            continue
-        items.append(_escape(_clean_inline_md(m.group(1))))
-    if not items:
-        return "<p class='note'>No steps available.</p>"
-    lis = "".join([f"<li>{item}</li>" for item in items])
-    return f"<ol>{lis}</ol>"
-
-
 def _table_rows(items: List[List[str]]) -> str:
     rows = []
     for row in items:
         cells = "".join([f"<td>{_escape(cell)}</td>" for cell in row])
         rows.append(f"<tr>{cells}</tr>")
     return "\n".join(rows)
-
-
-def _diagram_priority(stem: str) -> int:
-    order = [
-        "primary_user_flow",
-        "request_lifecycle_sequence",
-        "module_dependency_graph",
-        "c4_container",
-        "c4_context",
-        "critical_path_sequence",
-        "trust_boundary_flow",
-        "data_lineage_flow",
-        "where_to_change_map",
-    ]
-    try:
-        return order.index(stem)
-    except ValueError:
-        return 999
-
-
-def _diagram_title(stem: str) -> str:
-    titles = {
-        "primary_user_flow": "Primary User Flow",
-        "request_lifecycle_sequence": "Request Lifecycle Sequence",
-        "module_dependency_graph": "Module Dependency Graph",
-        "c4_container": "C4 Container View",
-        "c4_context": "C4 Context View",
-        "critical_path_sequence": "Critical Path Sequence",
-        "trust_boundary_flow": "Trust Boundary Flow",
-        "data_lineage_flow": "Data Lineage",
-        "where_to_change_map": "Where To Change Map",
-    }
-    return titles.get(stem, stem.replace("_", " ").title())
-
-
-def _diagram_cards(diagram_manifest: Dict[str, Any]) -> str:
-    stems = [Path(name).stem for name in diagram_manifest.get("diagram_files", [])]
-    stems.sort(key=_diagram_priority)
-    cards: List[str] = []
-    for stem in stems:
-        title = _diagram_title(stem)
-        svg_src = f"../diagrams/svg/{stem}.svg"
-        png_src = f"../diagrams/png/{stem}.png"
-        cards.append(
-            f"""
-<article class="diagram-card">
-  <div class="diagram-head">
-    <h3>{_escape(title)}</h3>
-    <div class="diagram-actions">
-      <button class="btn-open" data-title="{_escape(title)}" data-src="{_escape(svg_src)}" data-fallback="{_escape(png_src)}" type="button">Open Full Screen</button>
-      <a href="{_escape(svg_src)}" target="_blank" rel="noopener">SVG</a>
-      <a href="{_escape(png_src)}" target="_blank" rel="noopener">PNG</a>
-    </div>
-  </div>
-  <div class="diagram-frame">
-    <img class="diagram-preview" src="{_escape(svg_src)}" data-fallback="{_escape(png_src)}" alt="{_escape(title)} diagram" loading="lazy" />
-  </div>
-</article>
-"""
-        )
-    return "\n".join(cards) if cards else "<p class='note'>No diagrams generated.</p>"
 
 
 def _mode_context_block(analysis_type: str, context_payload: Dict[str, Any]) -> str:
@@ -158,19 +36,42 @@ def _mode_context_block(analysis_type: str, context_payload: Dict[str, Any]) -> 
             f"Commit window: {recap.get('since', context_payload.get('since', 'n/a'))}",
             f"Commits in window: {recap.get('commit_count', 0)}",
             f"Contributors: {len(recap.get('contributors', []))}",
+            f"Uncommitted changes present: {'yes' if recap.get('has_uncommitted_changes') else 'no'}",
         ]
-        return "<ul>" + "".join([f"<li>{_escape(item)}</li>" for item in items]) + "</ul>"
+        top_files = recap.get("top_changed_files", [])[:8]
+        top_html = "".join(
+            [f"<li><code>{_escape(item['path'])}</code> ({item['touch_count']} touches)</li>" for item in top_files]
+        ) or "<li>No changed files detected in selected window.</li>"
+        return (
+            "<p class='subhead'>Project Recap</p>"
+            "<p class='subhead'>Recent Activity</p>"
+            f"<ul>{''.join([f'<li>{_escape(x)}</li>' for x in items])}</ul>"
+            f"<p class='subhead'>Most touched files</p><ul>{top_html}</ul>"
+        )
+
     if analysis_type == "plan-review":
         plan = context_payload.get("plan_review", {})
         if not plan.get("available"):
             return f"<p class='note'>{_escape(plan.get('reason', 'Plan review context unavailable.'))}</p>"
+        missing = plan.get("referenced_missing_files", [])
+        existing = plan.get("referenced_existing_files", [])
+        missing_html = "".join([f"<li><code>{_escape(path)}</code></li>" for path in missing[:20]]) or "<li>None</li>"
+        existing_html = "".join([f"<li><code>{_escape(path)}</code></li>" for path in existing[:20]]) or "<li>None</li>"
         return (
             "<ul>"
             f"<li>Plan file: <code>{_escape(plan.get('plan_file', 'n/a'))}</code></li>"
+            f"<li>Plan headings: {plan.get('heading_count', 0)}</li>"
             f"<li>Referenced files: {plan.get('referenced_files_count', 0)}</li>"
-            f"<li>Missing references: {len(plan.get('referenced_missing_files', []))}</li>"
+            f"<li>Missing referenced files: {len(missing)}</li>"
             "</ul>"
+            "<div class='split'>"
+            "<div><p class='subhead'>Referenced files found</p><ul>"
+            f"{existing_html}</ul></div>"
+            "<div><p class='subhead'>Referenced files missing</p><ul>"
+            f"{missing_html}</ul></div>"
+            "</div>"
         )
+
     if analysis_type == "diff-review":
         diff = context_payload.get("diff_review", {})
         if not diff.get("available"):
@@ -181,31 +82,48 @@ def _mode_context_block(analysis_type: str, context_payload: Dict[str, Any]) -> 
             ["Added", str(diff.get("added_files", 0))],
             ["Modified", str(diff.get("modified_files", 0))],
             ["Deleted", str(diff.get("deleted_files", 0))],
+            ["Renamed", str(diff.get("renamed_files", 0))],
         ]
-        return "<table><tbody>" + _table_rows(rows) + "</tbody></table>"
+        return (
+            "<table class='mini-table'><tbody>"
+            f"{_table_rows(rows)}"
+            "</tbody></table>"
+        )
+
     highlights = context_payload.get("highlights", [])
-    if not highlights:
-        return "<p class='note'>Onboarding mode: purpose, module map, and key flows.</p>"
-    return "<ul>" + "".join([f"<li>{_escape(str(item))}</li>" for item in highlights[:8]]) + "</ul>"
+    highlight_html = "".join([f"<li>{_escape(item)}</li>" for item in highlights]) or "<li>No additional highlights.</li>"
+    return f"<ul>{highlight_html}</ul>"
 
 
-def _fallback_summary(
-    repo_name: str,
-    stack_payload: Dict[str, Any],
-    index_payload: Dict[str, Any],
-    entry_payload: Dict[str, Any],
-    flow_payload: Dict[str, Any],
-) -> str:
-    primary_language = stack_payload.get("primary_language", "Unknown")
-    module_count = len(index_payload.get("modules", []))
-    entry_count = int(entry_payload.get("count", len(entry_payload.get("entrypoints", []))))
-    flow_steps = flow_payload.get("primary_user_flow", {}).get("steps", [])[:4]
-    flow_clause = " -> ".join([str(step) for step in flow_steps]) if flow_steps else "intake -> analysis -> outputs"
-    return (
-        f"{repo_name} is mostly a {primary_language} project with about {module_count} main project areas. "
-        f"I found around {entry_count} likely starting files. "
-        f"A typical journey through the code looks like: {flow_clause}."
-    )
+def _diagram_cards(output_root: Path, diagram_manifest: Dict[str, Any]) -> str:
+    cards: List[str] = []
+    diagrams_dir = output_root / "diagrams"
+    for idx, file_name in enumerate(diagram_manifest.get("diagram_files", []), start=1):
+        mmd_path = diagrams_dir / file_name
+        mmd_text = common.read_text(mmd_path)
+        if not mmd_text.strip():
+            continue
+        title = Path(file_name).stem.replace("_", " ").title()
+        cards.append(
+            f"""
+<article class="card diagram-card">
+  <h3>{_escape(title)}</h3>
+  <div class="mermaid-wrap" data-initial-zoom="{1.1 if idx <= 3 else 1.0}">
+    <div class="zoom-controls">
+      <button type="button" data-action="zoom-in">+</button>
+      <button type="button" data-action="zoom-out">−</button>
+      <button type="button" data-action="zoom-reset">↺</button>
+    </div>
+    <pre class="mermaid">{_escape(mmd_text)}</pre>
+  </div>
+  <p class="meta-links">
+    <a href="../diagrams/svg/{_escape(Path(file_name).stem)}.svg">SVG</a>
+    <a href="../diagrams/png/{_escape(Path(file_name).stem)}.png">PNG</a>
+  </p>
+</article>
+"""
+        )
+    return "\n".join(cards) if cards else "<p class='note'>No diagrams generated.</p>"
 
 
 def generate_html(
@@ -230,37 +148,19 @@ def generate_html(
     html_path = html_dir / "ONBOARDING.html"
 
     repo_name = stack_payload.get("repo_name", common.detect_repo_name(source, output_root))
-    overview_md = common.read_text(output_root / "overview" / "OVERVIEW.md")
-    deep_md = common.read_text(output_root / "deep" / "SYSTEM_DEEP_DIVE.md")
-
-    summary_section = _extract_section(overview_md, "What This Repository Does")
-    flow_section = _extract_section(overview_md, "How Information Flows")
-    map_section = _extract_section(overview_md, "Directory Map (Plain Language)")
-    start_here_section = _extract_section(overview_md, "If You Are New, Start Here")
-    deep_critical_section = _extract_section(deep_md, "2) Important Journeys Through The Code")
-
-    summary_html = _paragraphs_from_markdown(summary_section)
-    if not summary_html:
-        summary = (llm_payload.get("repo_summary_paragraph") or "").strip() or _fallback_summary(
-            repo_name, stack_payload, index_payload, entry_payload, flow_payload
+    summary = (llm_payload.get("repo_summary_paragraph") or "").strip()
+    if not summary:
+        summary = (
+            f"{repo_name} follows {stack_payload.get('architecture_pattern', 'a custom')} architecture "
+            f"with primary language {stack_payload.get('primary_language', 'Unknown')}."
         )
-        summary_html = f"<p>{_escape(summary)}</p>"
-
-    flow_line = _clean_inline_md(flow_section).strip() if flow_section else ""
-    if not flow_line:
-        flow_line = " -> ".join([str(x) for x in flow_payload.get("request_lifecycle", [])]) or "Not detected"
 
     languages = stack_payload.get("languages", {})
     lang_text = ", ".join([f"{k} ({v})" for k, v in list(languages.items())[:8]]) or "Unknown"
     frameworks = ", ".join(stack_payload.get("frameworks", [])[:8]) or "None detected"
-    architecture_raw = stack_payload.get("architecture_pattern", "Unknown")
-    architecture_human = (
-        f"Custom project layout (detector label: {architecture_raw})"
-        if architecture_raw == "Custom/Undetected"
-        else architecture_raw
-    )
     modules = index_payload.get("modules", [])[:20]
     entrypoints = entry_payload.get("entrypoints", [])[:30]
+    lifecycle = flow_payload.get("request_lifecycle", [])
     critical_paths = flow_payload.get("critical_paths", [])[:8]
 
     module_rows = _table_rows(
@@ -268,7 +168,7 @@ def generate_html(
     )
     entry_rows = _table_rows([[e.get("path", ""), e.get("kind", "")] for e in entrypoints])
     path_rows = _table_rows(
-        [[p.get("name", "Path"), " -> ".join([str(s) for s in p.get("plain_steps", p.get("steps", []))[:9]])] for p in critical_paths]
+        [[p.get("name", "Path"), " -> ".join([str(s) for s in p.get("steps", [])[:7]])] for p in critical_paths]
     )
     verification_rows = _table_rows(
         [
@@ -280,11 +180,9 @@ def generate_html(
             for fact in verification_payload.get("facts", [])[:40]
         ]
     )
-    diagram_cards_html = _diagram_cards(diagram_manifest)
+
     mode_context_html = _mode_context_block(analysis_type, context_payload)
-    map_html = _bullet_list_from_markdown(map_section)
-    start_here_html = _numbered_list_from_markdown(start_here_section)
-    critical_html = _bullet_list_from_markdown(deep_critical_section)
+    diagram_cards_html = _diagram_cards(output_root, diagram_manifest)
 
     html_text = f"""<!DOCTYPE html>
 <html lang="en">
@@ -294,230 +192,227 @@ def generate_html(
   <title>{_escape(repo_name)} - Code Explainer</title>
   <style>
     :root {{
-      --bg: #f4f0e7;
-      --panel: #fffdf8;
-      --panel-2: #f6efe1;
-      --text: #2f2619;
-      --muted: #6e6453;
-      --line: rgba(0,0,0,0.1);
+      --bg: #f7f4ee;
+      --surface: #ffffff;
+      --surface-muted: #f1ece3;
+      --text: #2b2317;
+      --text-dim: #6f6453;
+      --border: rgba(0, 0, 0, 0.09);
       --accent: #0f766e;
-      --accent-soft: rgba(15,118,110,0.12);
+      --accent-dim: rgba(15, 118, 110, 0.12);
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --hero: #fff8ef;
     }}
     @media (prefers-color-scheme: dark) {{
       :root {{
-        --bg: #141816;
-        --panel: #1d2421;
-        --panel-2: #24302b;
-        --text: #e7efe9;
-        --muted: #9fb3a8;
-        --line: rgba(255,255,255,0.14);
+        --bg: #111414;
+        --surface: #1a1f1f;
+        --surface-muted: #212828;
+        --text: #e5eee9;
+        --text-dim: #9eb1a8;
+        --border: rgba(255, 255, 255, 0.12);
         --accent: #34d399;
-        --accent-soft: rgba(52,211,153,0.14);
+        --accent-dim: rgba(52, 211, 153, 0.14);
+        --warn: #f59e0b;
+        --danger: #f87171;
+        --hero: #1e2422;
       }}
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      color: var(--text);
-      background: radial-gradient(circle at 15% 0%, var(--accent-soft), transparent 35%), var(--bg);
       font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse at 15% 0%, var(--accent-dim) 0%, transparent 40%),
+        var(--bg);
     }}
     .layout {{
-      max-width: 1480px;
+      max-width: 1500px;
       margin: 0 auto;
       padding: 24px;
       display: grid;
-      grid-template-columns: 240px minmax(0,1fr);
-      gap: 20px;
+      grid-template-columns: 250px minmax(0, 1fr);
+      gap: 24px;
     }}
     .toc {{
       position: sticky;
-      top: 16px;
+      top: 18px;
       align-self: start;
-      border: 1px solid var(--line);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
-      background: var(--panel);
-      padding: 12px;
+      padding: 14px;
     }}
-    .toc h2 {{ margin: 0 0 10px; font-size: 13px; color: var(--muted); }}
+    .toc h2 {{ font-size: 14px; margin: 0 0 12px; color: var(--text-dim); }}
     .toc a {{
       display: block;
       padding: 8px 10px;
       border-radius: 8px;
-      color: var(--text);
       text-decoration: none;
+      color: var(--text);
       font-size: 13px;
     }}
-    .toc a:hover {{ background: var(--panel-2); }}
-    main {{ display: grid; gap: 16px; }}
+    .toc a:hover {{ background: var(--surface-muted); }}
+    main {{
+      display: grid;
+      gap: 20px;
+      min-width: 0;
+    }}
     section {{
-      border: 1px solid var(--line);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 14px;
-      background: var(--panel);
       padding: 20px;
+      min-width: 0;
     }}
     .hero {{
-      background: linear-gradient(130deg, var(--panel), var(--panel-2));
-      box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+      background: var(--hero);
+      border-color: color-mix(in srgb, var(--accent) 35%, var(--border) 65%);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+      padding: 24px;
     }}
-    h1 {{ margin: 0 0 8px; font-size: clamp(26px, 4vw, 42px); }}
-    h2 {{ margin: 0 0 12px; font-size: 22px; }}
+    .hero h1 {{ margin: 0 0 8px; font-size: clamp(26px, 4vw, 42px); }}
     .meta {{
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-bottom: 14px;
       display: flex;
       flex-wrap: wrap;
-      gap: 10px 16px;
-      color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 12px;
+      gap: 14px;
     }}
-    .grid2 {{
+    .subgrid {{
       display: grid;
-      grid-template-columns: repeat(2, minmax(0,1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }}
+    .card {{
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: var(--surface-muted);
+      min-width: 0;
+      overflow-wrap: break-word;
+    }}
+    .card h3 {{ margin: 0 0 8px; font-size: 15px; }}
+    .subhead {{
+      margin: 10px 0 6px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+    }}
+    .split {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }}
-    .panel {{
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: var(--panel-2);
-      padding: 12px;
-    }}
-    .note {{ color: var(--muted); font-size: 13px; }}
     table {{
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
     }}
     th, td {{
-      border-bottom: 1px solid var(--line);
+      border-bottom: 1px solid var(--border);
       text-align: left;
       padding: 8px 10px;
       vertical-align: top;
+      overflow-wrap: break-word;
+      min-width: 0;
     }}
-    th {{ color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }}
+    th {{
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+    }}
     .table-wrap {{
-      border: 1px solid var(--line);
-      border-radius: 10px;
       overflow: auto;
       max-height: 360px;
-      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
     }}
+    details {{
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: var(--surface-muted);
+      margin-top: 12px;
+    }}
+    details summary {{
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+    }}
+    .note {{ color: var(--text-dim); font-size: 13px; }}
     .diagram-grid {{
       display: grid;
-      grid-template-columns: repeat(2, minmax(0,1fr));
-      gap: 14px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
     }}
-    .diagram-card {{
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--panel-2);
-      padding: 12px;
+    .diagram-card {{ background: var(--surface); }}
+    .mermaid-wrap {{
+      position: relative;
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      min-height: 420px;
+      max-height: 620px;
+      overflow: auto;
+      padding: 42px 12px 12px;
+      background: var(--surface-muted);
     }}
-    .diagram-head {{
+    .mermaid {{
       display: flex;
-      justify-content: space-between;
+      justify-content: center;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
+      min-height: 340px;
+      transform-origin: top center;
     }}
-    .diagram-head h3 {{ margin: 0; font-size: 16px; }}
-    .diagram-actions {{
+    .mermaid-wrap.is-zoomed {{ cursor: grab; }}
+    .mermaid-wrap.is-panning {{ cursor: grabbing; user-select: none; }}
+    .zoom-controls {{
+      position: sticky;
+      top: 0;
       display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-      font-size: 12px;
+      justify-content: flex-end;
+      gap: 4px;
+      margin-bottom: 8px;
+      z-index: 3;
+      pointer-events: auto;
     }}
-    .diagram-actions a {{
-      color: var(--accent);
-      text-decoration: none;
-      padding: 4px 6px;
-      border-radius: 6px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-    }}
-    .btn-open {{
-      border: 1px solid var(--line);
-      background: var(--panel);
+    .zoom-controls button {{
+      border: 1px solid var(--border);
+      background: var(--surface);
       color: var(--text);
       border-radius: 8px;
-      padding: 6px 10px;
+      width: 28px;
+      height: 28px;
       cursor: pointer;
+    }}
+    .meta-links {{
+      display: flex;
+      gap: 10px;
       font-size: 12px;
-      font-family: inherit;
+      margin-top: 8px;
     }}
-    .diagram-frame {{
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #ffffff;
-      height: 340px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: auto;
-      padding: 8px;
-    }}
-    .diagram-preview {{
-      max-width: 100%;
-      max-height: 100%;
-      width: auto;
-      height: auto;
-      display: block;
-      cursor: zoom-in;
-    }}
-    .lightbox {{
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.85);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999;
-      padding: 20px;
-    }}
-    .lightbox.open {{ display: flex; }}
-    .lightbox-inner {{
-      width: min(96vw, 1600px);
-      height: min(92vh, 1000px);
-      background: #ffffff;
-      border-radius: 12px;
-      padding: 12px;
-      display: grid;
-      grid-template-rows: auto 1fr;
-      gap: 10px;
-    }}
-    .lightbox-head {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }}
-    .lightbox-head h3 {{ margin: 0; font-size: 16px; color: #222; }}
-    .lightbox-close {{
-      border: 1px solid #ddd;
-      background: #fff;
-      border-radius: 8px;
-      padding: 6px 10px;
-      cursor: pointer;
-    }}
-    .lightbox-canvas {{
-      overflow: auto;
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      background: #fff;
-    }}
-    .lightbox-img {{
-      width: 100%;
-      height: auto;
-      min-width: 900px;
-      display: block;
-    }}
+    .meta-links a {{ color: var(--accent); text-decoration: none; }}
     @media (max-width: 1080px) {{
       .layout {{ grid-template-columns: 1fr; }}
-      .toc {{ position: static; }}
-      .diagram-grid {{ grid-template-columns: 1fr; }}
-      .grid2 {{ grid-template-columns: 1fr; }}
-      .diagram-frame {{ height: 300px; }}
-      .lightbox-img {{ min-width: 640px; }}
+      .toc {{
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        overflow-x: auto;
+        white-space: nowrap;
+      }}
+      .toc a {{ display: inline-block; }}
+      .subgrid, .split, .diagram-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -526,96 +421,104 @@ def generate_html(
     <nav class="toc">
       <h2>Navigate</h2>
       <a href="#summary">Summary</a>
-      <a href="#diagrams">Visual Walkthrough</a>
-      <a href="#modules">Project Areas</a>
-      <a href="#flows">How Work Moves</a>
+      <a href="#mode-context">Mode Context</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#modules">Modules</a>
+      <a href="#flows">Flows</a>
+      <a href="#dependencies">Dependencies</a>
       <a href="#evidence">Evidence</a>
     </nav>
     <main>
       <section id="summary" class="hero">
-        <h1>{_escape(repo_name)} Onboarding Explainer</h1>
+        <h1>{_escape(repo_name)} Explainer</h1>
         <div class="meta">
           <span>Source: <code>{_escape(source)}</code></span>
+          <span>Type: <code>{_escape(analysis_type)}</code></span>
           <span>Mode: <code>{_escape(mode)}</code></span>
           <span>Audience: <code>{_escape(audience)}</code></span>
-          <span>Type: <code>{_escape(analysis_type)}</code></span>
           <span>Length: <code>{_escape(overview_length)}</code></span>
         </div>
-        {summary_html}
-        <div class="grid2">
-          <article class="panel">
-            <strong>Quick Facts</strong>
-            <p>Project shape: <strong>{_escape(architecture_human)}</strong></p>
-            <p>Languages: <strong>{_escape(lang_text)}</strong></p>
-            <p>Frameworks: <strong>{_escape(frameworks)}</strong></p>
-            <p>Starting files found: <strong>{entry_payload.get('count', len(entry_payload.get('entrypoints', [])))}</strong></p>
+        <p>{_escape(summary)}</p>
+        <div class="subgrid">
+          <article class="card">
+            <h3>Stack</h3>
+            <p><strong>Languages:</strong> {_escape(lang_text)}</p>
+            <p><strong>Frameworks:</strong> {_escape(frameworks)}</p>
+            <p><strong>Architecture:</strong> {_escape(stack_payload.get('architecture_pattern', 'Unknown'))}</p>
           </article>
-          <article class="panel">
-            <strong>Best First Steps</strong>
-            {start_here_html}
+          <article class="card">
+            <h3>Coverage</h3>
+            <p>Docs parsed: <strong>{docs_payload.get('parsed_count', 0)}/{docs_payload.get('discovered_count', 0)}</strong></p>
+            <p>Entrypoints: <strong>{entry_payload.get('count', len(entry_payload.get('entrypoints', [])))}</strong></p>
+            <p>Internal edges: <strong>{dep_payload.get('internal_edge_count', 0)}</strong></p>
           </article>
         </div>
       </section>
 
-      <section>
-        <h2>What Context Was Used</h2>
+      <section id="mode-context">
+        <h2>Mode-Specific Context</h2>
         {mode_context_html}
       </section>
 
-      <section id="diagrams">
-        <h2>Visual Walkthrough</h2>
-        <p class="note">These visuals come from the same generated files as the markdown docs. Read inline or open full screen.</p>
+      <section id="architecture">
+        <h2>Architecture Diagrams</h2>
+        <p class="note">Interactive Mermaid diagrams. Use +/-/reset, Ctrl/Cmd + wheel, and drag-pan when zoomed.</p>
         <div class="diagram-grid">
           {diagram_cards_html}
         </div>
       </section>
 
       <section id="modules">
-        <h2>Main Project Areas</h2>
-        {map_html}
+        <h2>Module Landscape</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Module</th><th>Files</th><th>Type</th></tr></thead>
-            <tbody>{module_rows}</tbody>
+            <thead>
+              <tr><th>Module</th><th>Files</th><th>Type</th></tr>
+            </thead>
+            <tbody>
+              {module_rows}
+            </tbody>
           </table>
         </div>
       </section>
 
       <section id="flows">
-        <h2>How Work Moves Through The Project</h2>
-        <p><strong>Main flow:</strong> {_escape(flow_line)}</p>
-        <h3>Important Journeys</h3>
-        {critical_html}
+        <h2>Flow Tracing</h2>
+        <p><strong>Request lifecycle:</strong> {_escape(' -> '.join([str(x) for x in lifecycle])) or 'Not detected'}</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Path</th><th>Steps</th></tr></thead>
-            <tbody>{path_rows}</tbody>
+            <thead>
+              <tr><th>Critical Path</th><th>Steps</th></tr>
+            </thead>
+            <tbody>
+              {path_rows}
+            </tbody>
           </table>
         </div>
       </section>
 
+      <section id="dependencies">
+        <h2>Dependency View</h2>
+        <details open>
+          <summary>Entrypoints</summary>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Path</th><th>Kind</th></tr></thead>
+              <tbody>{entry_rows}</tbody>
+            </table>
+          </div>
+        </details>
+        <details>
+          <summary>External dependency manifests</summary>
+          <pre>{_escape(json.dumps(dep_payload.get("external_dependencies", {}), indent=2, ensure_ascii=False))}</pre>
+        </details>
+      </section>
+
       <section id="evidence">
-        <h2>How Sure This Explanation Is</h2>
-        <div class="grid2">
-          <article class="panel">
-            <p>Docs parsed: <strong>{docs_payload.get('parsed_count', 0)}/{docs_payload.get('discovered_count', 0)}</strong></p>
-            <p>Starting files found: <strong>{entry_payload.get('count', len(entry_payload.get('entrypoints', [])))}</strong></p>
-            <p>File links mapped: <strong>{dep_payload.get('internal_edge_count', 0)}</strong></p>
-          </article>
-          <article class="panel">
-            <p class="note">This HTML is aligned to generated markdown and diagram artifacts for the same run.</p>
-          </article>
-        </div>
-        <h3>Starting Files</h3>
+        <h2>Verification Checkpoint</h2>
+        <p class="note">Evidence gathered before narrative generation, with source file locations.</p>
         <div class="table-wrap">
-          <table>
-            <thead><tr><th>File</th><th>Why it is likely a start file</th></tr></thead>
-            <tbody>{entry_rows}</tbody>
-          </table>
-        </div>
-        <h3>Evidence Behind Claims</h3>
-        <div class="table-wrap">
-          <table>
+          <table class="mini-table">
             <thead><tr><th>Claim</th><th>Status</th><th>Evidence Sources</th></tr></thead>
             <tbody>{verification_rows}</tbody>
           </table>
@@ -624,82 +527,101 @@ def generate_html(
     </main>
   </div>
 
-  <div id="lightbox" class="lightbox" aria-hidden="true">
-    <div class="lightbox-inner">
-      <div class="lightbox-head">
-        <h3 id="lightbox-title">Diagram</h3>
-        <button id="lightbox-close" class="lightbox-close" type="button">Close</button>
-      </div>
-      <div class="lightbox-canvas">
-        <img id="lightbox-img" class="lightbox-img" src="" alt="Diagram full view" />
-      </div>
-    </div>
-  </div>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
-  <script>
-    (function() {{
-      const lightbox = document.getElementById('lightbox');
-      const lightboxImg = document.getElementById('lightbox-img');
-      const lightboxTitle = document.getElementById('lightbox-title');
-      const closeBtn = document.getElementById('lightbox-close');
-
-      function fallbackImg(img) {{
-        const fallback = img.getAttribute('data-fallback');
-        if (fallback && img.getAttribute('src') !== fallback) {{
-          img.setAttribute('src', fallback);
-        }}
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({{
+      startOnLoad: false,
+      theme: 'base',
+      look: 'classic',
+      flowchart: {{ curve: 'basis' }},
+      themeVariables: {{
+        primaryColor: isDark ? '#1f3330' : '#e6f4ee',
+        primaryTextColor: isDark ? '#e5eee9' : '#2b2317',
+        primaryBorderColor: isDark ? '#34d399' : '#0f766e',
+        lineColor: isDark ? '#87a79b' : '#5e6f68',
+        secondaryColor: isDark ? '#262b2b' : '#eef1ef',
+        tertiaryColor: isDark ? '#2a312f' : '#f1eee8',
+        background: isDark ? '#1a1f1f' : '#ffffff',
+        fontFamily: '"IBM Plex Sans", "Segoe UI", sans-serif',
+        fontSize: '17px'
       }}
+    }});
 
-      document.querySelectorAll('img.diagram-preview').forEach((img) => {{
-        img.addEventListener('error', () => fallbackImg(img));
-        img.addEventListener('click', () => {{
-          lightboxTitle.textContent = img.getAttribute('alt') || 'Diagram';
-          lightboxImg.src = img.getAttribute('src');
-          lightboxImg.setAttribute('data-fallback', img.getAttribute('data-fallback') || '');
-          lightbox.classList.add('open');
-          lightbox.setAttribute('aria-hidden', 'false');
+    function applyZoom(wrap, next) {{
+      const target = wrap.querySelector('.mermaid');
+      const z = Math.max(0.35, Math.min(3.0, next));
+      target.dataset.zoom = String(z);
+      if ('zoom' in target.style) {{
+        target.style.zoom = z;
+      }} else {{
+        target.style.transform = `scale(${{z}})`;
+      }}
+      wrap.classList.toggle('is-zoomed', z > 1.01);
+    }}
+
+    function initWrap(wrap) {{
+      const target = wrap.querySelector('.mermaid');
+      const initial = parseFloat(wrap.dataset.initialZoom || '1');
+      applyZoom(wrap, initial);
+
+      let panStartX = 0;
+      let panStartY = 0;
+      let panScrollLeft = 0;
+      let panScrollTop = 0;
+
+      wrap.addEventListener('wheel', (e) => {{
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        const current = parseFloat(target.dataset.zoom || '1');
+        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        applyZoom(wrap, current * factor);
+      }}, {{ passive: false }});
+
+      wrap.addEventListener('mousedown', (e) => {{
+        if (e.target.closest('.zoom-controls')) return;
+        const current = parseFloat(target.dataset.zoom || '1');
+        if (current <= 1.01) return;
+        wrap.classList.add('is-panning');
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        panScrollLeft = wrap.scrollLeft;
+        panScrollTop = wrap.scrollTop;
+      }});
+
+      window.addEventListener('mousemove', (e) => {{
+        if (!wrap.classList.contains('is-panning')) return;
+        wrap.scrollLeft = panScrollLeft - (e.clientX - panStartX);
+        wrap.scrollTop = panScrollTop - (e.clientY - panStartY);
+      }});
+
+      window.addEventListener('mouseup', () => {{
+        wrap.classList.remove('is-panning');
+      }});
+    }}
+
+    function bindControls() {{
+      document.querySelectorAll('.mermaid-wrap').forEach((wrap) => {{
+        wrap.querySelectorAll('.zoom-controls button').forEach((button) => {{
+          button.addEventListener('click', () => {{
+            const target = wrap.querySelector('.mermaid');
+            const current = parseFloat(target.dataset.zoom || '1');
+            const action = button.dataset.action;
+            if (action === 'zoom-in') applyZoom(wrap, current * 1.2);
+            if (action === 'zoom-out') applyZoom(wrap, current * 0.8);
+            if (action === 'zoom-reset') applyZoom(wrap, parseFloat(wrap.dataset.initialZoom || '1'));
+          }});
         }});
       }});
+    }}
 
-      document.querySelectorAll('.btn-open').forEach((btn) => {{
-        btn.addEventListener('click', () => {{
-          const src = btn.getAttribute('data-src') || '';
-          const fallback = btn.getAttribute('data-fallback') || '';
-          const title = btn.getAttribute('data-title') || 'Diagram';
-          lightboxTitle.textContent = title;
-          lightboxImg.src = src;
-          lightboxImg.setAttribute('data-fallback', fallback);
-          lightbox.classList.add('open');
-          lightbox.setAttribute('aria-hidden', 'false');
-        }});
-      }});
-
-      lightboxImg.addEventListener('error', () => {{
-        const fallback = lightboxImg.getAttribute('data-fallback') || '';
-        if (fallback && lightboxImg.src !== fallback) {{
-          lightboxImg.src = fallback;
-        }}
-      }});
-
-      closeBtn.addEventListener('click', () => {{
-        lightbox.classList.remove('open');
-        lightbox.setAttribute('aria-hidden', 'true');
-      }});
-
-      lightbox.addEventListener('click', (e) => {{
-        if (e.target === lightbox) {{
-          lightbox.classList.remove('open');
-          lightbox.setAttribute('aria-hidden', 'true');
-        }}
-      }});
-
-      document.addEventListener('keydown', (e) => {{
-        if (e.key === 'Escape') {{
-          lightbox.classList.remove('open');
-          lightbox.setAttribute('aria-hidden', 'true');
-        }}
-      }});
-    }})();
+    mermaid.run().then(() => {{
+      bindControls();
+      document.querySelectorAll('.mermaid-wrap').forEach(initWrap);
+    }}).catch((err) => {{
+      console.error('Mermaid render failed', err);
+    }});
   </script>
 </body>
 </html>
@@ -711,8 +633,7 @@ def generate_html(
         "analysis_type": analysis_type,
         "output_file": common.relative_path(html_path, output_root),
         "diagram_count": len(diagram_manifest.get("diagram_files", [])),
-        "section_count": 6,
-        "html_uses_rendered_assets": True,
+        "section_count": 7,
     }
     common.write_json(output_root / "meta" / "html_generation.json", payload)
     return payload
