@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import tempfile
@@ -151,7 +152,8 @@ def run_pipeline(
     enable_excalidraw_export: bool,
     enable_official_excalidraw_bridge: bool = False,
     ask_before_llm_use: bool = False,
-    prompt_for_llm_key: bool = False,
+    prompt_for_llm_key: bool = True,
+    persist_llm_key: str = "ask",
     include_globs: List[str] | None = None,
     exclude_globs: List[str] | None = None,
     since: str = "2 weeks ago",
@@ -166,6 +168,15 @@ def run_pipeline(
     common.ensure_dir(output_root / "diagrams" / "svg")
     common.ensure_dir(output_root / "diagrams" / "png")
     common.ensure_dir(output_root / "html")
+
+    resolved_llm_runtime: Dict[str, Any] | None = None
+    use_mock_llm = common.bool_from_string(os.environ.get("CODE_EXPLAINER_MOCK_LLM", "false"))
+    if enable_llm_descriptions and not use_mock_llm:
+        resolved_llm_runtime = llm_describe.resolve_llm_runtime(
+            prompt_for_key=prompt_for_llm_key,
+            persist_key_mode=persist_llm_key,
+            require_key=True,
+        )
 
     repo_root, should_cleanup, cleanup_root = _resolve_source(source)
     try:
@@ -239,6 +250,8 @@ def run_pipeline(
             enabled=enable_llm_descriptions,
             ask_before_use=ask_before_llm_use,
             prompt_for_key=prompt_for_llm_key,
+            persist_key_mode=persist_llm_key,
+            resolved_runtime=resolved_llm_runtime,
         )
 
         diagram_manifest = build_diagrams.build_diagrams(
@@ -406,7 +419,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--enable-excalidraw-export", default="true")
     parser.add_argument("--enable-official-excalidraw-bridge", default="false")
     parser.add_argument("--ask-before-llm-use", default="false")
-    parser.add_argument("--prompt-for-llm-key", default="false")
+    parser.add_argument("--prompt-for-llm-key", default="true")
+    parser.add_argument("--persist-llm-key", default="ask", choices=["ask", "true", "false"])
     return parser.parse_args()
 
 
@@ -437,6 +451,7 @@ def main() -> int:
         enable_official_excalidraw_bridge=official_excalidraw_bridge_enabled,
         ask_before_llm_use=ask_before_llm_use,
         prompt_for_llm_key=prompt_for_llm_key,
+        persist_llm_key=args.persist_llm_key,
         include_globs=args.include_glob,
         exclude_globs=args.exclude_glob,
         since=args.since,

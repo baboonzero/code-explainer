@@ -106,7 +106,8 @@ python scripts/analyze.py analyze \
   --enable-excalidraw-export true \
   --enable-official-excalidraw-bridge false \
   --ask-before-llm-use false \
-  --prompt-for-llm-key false \
+  --prompt-for-llm-key true \
+  --persist-llm-key ask \
   --enable-web-enrichment false
 ```
 
@@ -120,6 +121,7 @@ Useful controls:
 - `--audience nontech|mixed|engineering`
 - `--enable-excalidraw-export true|false`
 - `--enable-official-excalidraw-bridge true|false`
+- `--persist-llm-key ask|true|false`
 
 ## Diagram and Excalidraw Behavior
 
@@ -133,6 +135,8 @@ Useful controls:
 - Live model path: set `CODE_EXPLAINER_LLM_API_KEY` or `OPENAI_API_KEY`
 - Optional overrides: `CODE_EXPLAINER_LLM_BASE_URL`, `CODE_EXPLAINER_LLM_MODEL`
 - Offline proof path: set `CODE_EXPLAINER_MOCK_LLM=true`
+- If no key is available, the skill prompts for one by default in an interactive terminal.
+- The user can choose to persist that key into `code-explainer/.env` for future runs.
 
 If live LLM access is unavailable, the skill records that downgrade in `meta/llm_summary.json`.
 

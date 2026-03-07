@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_DIR = SCRIPT_DIR.parent
+LOCAL_ENV_PATH = SKILL_DIR / ".env"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
@@ -45,6 +47,112 @@ def _prompt_api_key() -> str:
         return getpass.getpass("Enter LLM API key (input hidden): ").strip()
     except Exception:
         return ""
+
+
+def _confirm_persist_key(env_path: Path) -> bool:
+    answer = input(f"Save the LLM API key to {env_path.as_posix()} for future runs? [y/N]: ").strip().lower()
+    return answer in {"y", "yes"}
+
+
+def _read_local_env(path: Path) -> Dict[str, str]:
+    values: Dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _write_local_env_key(path: Path, key: str, value: str) -> None:
+    existing_lines: List[str] = []
+    if path.exists():
+        existing_lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+
+    updated = False
+    next_lines: List[str] = []
+    for raw in existing_lines:
+        if raw.strip().startswith(f"{key}="):
+            next_lines.append(f"{key}={value}")
+            updated = True
+        else:
+            next_lines.append(raw)
+    if not updated:
+        next_lines.append(f"{key}={value}")
+
+    path.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def resolve_llm_runtime(
+    prompt_for_key: bool = True,
+    persist_key_mode: str = "ask",
+    require_key: bool = True,
+) -> Dict[str, Any]:
+    model = os.environ.get("CODE_EXPLAINER_LLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    base_url = _normalize_base_url(os.environ.get("CODE_EXPLAINER_LLM_BASE_URL", DEFAULT_BASE_URL))
+    local_env = _read_local_env(LOCAL_ENV_PATH)
+    interactive = _is_interactive_terminal()
+    prompted = False
+    persisted = False
+    key_source = ""
+
+    api_key = os.environ.get("CODE_EXPLAINER_LLM_API_KEY", "").strip()
+    if api_key:
+        key_source = "environment:CODE_EXPLAINER_LLM_API_KEY"
+    if not api_key:
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if api_key:
+            key_source = "environment:OPENAI_API_KEY"
+    if not api_key:
+        api_key = local_env.get("CODE_EXPLAINER_LLM_API_KEY", "").strip()
+        if api_key:
+            key_source = f"local-env:{LOCAL_ENV_PATH.name}"
+    if not api_key:
+        api_key = local_env.get("OPENAI_API_KEY", "").strip()
+        if api_key:
+            key_source = f"local-env:{LOCAL_ENV_PATH.name}"
+
+    if not api_key and prompt_for_key:
+        prompted = True
+        if not interactive:
+            raise RuntimeError(
+                "No LLM API key was found and this terminal cannot prompt. Set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY, "
+                f"or add CODE_EXPLAINER_LLM_API_KEY to {LOCAL_ENV_PATH.as_posix()}."
+            )
+        api_key = _prompt_api_key()
+        if not api_key and require_key:
+            raise RuntimeError("LLM API key is required for this skill and was not provided.")
+        key_source = "prompt"
+        persist_mode = (persist_key_mode or "ask").strip().lower()
+        should_persist = False
+        if api_key:
+            if persist_mode == "true":
+                should_persist = True
+            elif persist_mode == "ask":
+                should_persist = _confirm_persist_key(LOCAL_ENV_PATH)
+            if should_persist:
+                _write_local_env_key(LOCAL_ENV_PATH, "CODE_EXPLAINER_LLM_API_KEY", api_key)
+                persisted = True
+                key_source = f"local-env:{LOCAL_ENV_PATH.name}"
+
+    if not api_key and require_key:
+        raise RuntimeError(
+            "No LLM API key found. Set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY, "
+            f"or add CODE_EXPLAINER_LLM_API_KEY to {LOCAL_ENV_PATH.as_posix()}."
+        )
+
+    return {
+        "api_key": api_key,
+        "model": model,
+        "base_url": base_url,
+        "prompted_for_key": prompted,
+        "persisted_key": persisted,
+        "key_source": key_source,
+        "env_path": LOCAL_ENV_PATH.as_posix(),
+    }
 
 
 def _post_json(url: str, api_key: str, payload: Dict[str, Any], timeout: int = 90) -> Tuple[int, str]:
@@ -108,6 +216,9 @@ def _default_llm_payload(enabled: bool, model: str) -> Dict[str, Any]:
         "diagram_briefs": [],
         "caveats": [],
         "confidence_notes": [],
+        "key_source": "",
+        "persisted_key": False,
+        "env_path": LOCAL_ENV_PATH.as_posix(),
         "error": "",
     }
 
@@ -268,7 +379,9 @@ def generate_llm_descriptions(
     out_dir: Path,
     enabled: bool = True,
     ask_before_use: bool = False,
-    prompt_for_key: bool = False,
+    prompt_for_key: bool = True,
+    persist_key_mode: str = "ask",
+    resolved_runtime: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     del repo_root, index_payload, entry_payload, docs_payload
     model = os.environ.get("CODE_EXPLAINER_LLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
@@ -308,27 +421,34 @@ def generate_llm_descriptions(
             common.write_json(out_dir / "llm_summary.json", payload)
             return payload
 
-    api_key = (
-        os.environ.get("CODE_EXPLAINER_LLM_API_KEY", "").strip()
-        or os.environ.get("OPENAI_API_KEY", "").strip()
-    )
-    if not api_key and prompt_for_key:
-        payload["prompted_for_key"] = True
-        if not interactive:
-            payload["error"] = "Prompt-for-key requested but terminal is non-interactive and no key was found."
+    runtime = resolved_runtime
+    if runtime is None:
+        try:
+            runtime = resolve_llm_runtime(
+                prompt_for_key=prompt_for_key,
+                persist_key_mode=persist_key_mode,
+                require_key=True,
+            )
+        except RuntimeError as exc:
+            payload["error"] = str(exc)
             common.write_json(out_dir / "llm_summary.json", payload)
             return payload
-        api_key = _prompt_api_key()
+
+    api_key = str(runtime.get("api_key", "")).strip()
+    payload["prompted_for_key"] = bool(runtime.get("prompted_for_key", False))
+    payload["persisted_key"] = bool(runtime.get("persisted_key", False))
+    payload["key_source"] = str(runtime.get("key_source", "")).strip()
+    payload["env_path"] = str(runtime.get("env_path", LOCAL_ENV_PATH.as_posix()))
+    payload["model"] = str(runtime.get("model", model)).strip() or model
 
     if not api_key:
         payload["error"] = "No API key found (set CODE_EXPLAINER_LLM_API_KEY or OPENAI_API_KEY)."
         common.write_json(out_dir / "llm_summary.json", payload)
         return payload
 
-    base_url = _normalize_base_url(os.environ.get("CODE_EXPLAINER_LLM_BASE_URL", DEFAULT_BASE_URL))
-    endpoint = f"{base_url}/chat/completions"
+    endpoint = f"{str(runtime.get('base_url', DEFAULT_BASE_URL)).rstrip('/')}/chat/completions"
     request_payload = {
-        "model": model,
+        "model": payload["model"],
         "temperature": 0.15,
         "response_format": {"type": "json_object"},
         "messages": _request_messages(request_context),
@@ -394,7 +514,8 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--enabled", default="true")
     parser.add_argument("--ask-before-use", default="false")
-    parser.add_argument("--prompt-for-key", default="false")
+    parser.add_argument("--prompt-for-key", default="true")
+    parser.add_argument("--persist-key", default="ask")
     args = parser.parse_args()
 
     payload = generate_llm_descriptions(
@@ -415,6 +536,7 @@ def main() -> int:
         enabled=common.bool_from_string(args.enabled),
         ask_before_use=common.bool_from_string(args.ask_before_use),
         prompt_for_key=common.bool_from_string(args.prompt_for_key),
+        persist_key_mode=args.persist_key,
     )
     print(json.dumps({"used": payload.get("used", False), "provider": payload.get("provider", ""), "error": payload.get("error", "")}, indent=2))
     return 0

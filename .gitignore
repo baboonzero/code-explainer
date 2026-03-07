@@ -12,6 +12,7 @@ code-explainer/.ci-out/
 code-explainer/.audit_tmp/
 code-explainer/code-explainer-output/
 code-explainer/node_modules/
+code-explainer/.env
 
 # OS/editor
 .DS_Store

@@ -55,6 +55,7 @@ python scripts/analyze.py analyze \
   --enable-official-excalidraw-bridge <true|false> \
   --ask-before-llm-use <true|false> \
   --prompt-for-llm-key <true|false> \
+  --persist-llm-key <ask|true|false> \
   --enable-web-enrichment <true|false>
 ```
 
@@ -69,15 +70,18 @@ Defaults:
 - `enable-excalidraw-export=true`
 - `enable-official-excalidraw-bridge=false`
 - `ask-before-llm-use=false`
-- `prompt-for-llm-key=false`
+- `prompt-for-llm-key=true`
+- `persist-llm-key=ask`
 - `enable-web-enrichment=true`
 
 ## LLM Behavior
 
 - The high-quality path is explanation-first and uses `scripts/llm_describe.py`.
+- The LLM path is the required production path for this skill.
 - If `CODE_EXPLAINER_LLM_API_KEY` or `OPENAI_API_KEY` is set, the skill can use a live model.
-- If live LLM access is unavailable, the pipeline falls back to grounded deterministic wording and records that downgrade in `meta/llm_summary.json`.
-- For proof runs and offline regression tests, set `CODE_EXPLAINER_MOCK_LLM=true` to exercise the full explanation pipeline without network access.
+- If no key is available, the skill should prompt for one when the terminal is interactive.
+- The user can choose to persist the provided key in a local `.env` file for future runs.
+- `CODE_EXPLAINER_MOCK_LLM=true` is only for explicit development or offline test scenarios and is not the normal production path.
 
 ## Workflow
 
@@ -130,6 +134,7 @@ bash ./scripts/install_runtime.sh
 ## Notes
 
 - This skill does not mutate the analyzed repository.
+- The skill may create or update a local `.env` file in the skill directory when the user chooses to persist the prompted LLM key.
 - If the explanation-quality score is below the rubric threshold, treat the output as failed even if files were produced.
 - If Excalidraw export is enabled, treat missing or partial editable scene generation as a real quality issue, not a cosmetic extra.
 - The deterministic local Excalidraw exporter is the canonical production path.

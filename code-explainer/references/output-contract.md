@@ -151,6 +151,9 @@
 - `caveats[]`
 - `confidence_notes[]`
 - `error`
+- `key_source`
+- `persisted_key`
+- `env_path`
 
 ## Fact-Check Schema
 

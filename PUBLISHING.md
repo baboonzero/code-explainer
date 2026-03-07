@@ -56,6 +56,8 @@ Recommended for higher-fidelity diagram rendering:
 
 Even without live LLM access, the proof path still works through `CODE_EXPLAINER_MOCK_LLM=true`. The deterministic Excalidraw scene generator is now the default production path, so the repo does not need to ship the official bridge dependency in its default install surface. If a developer wants to experiment with the official bridge anyway, they can install it locally with `npm install --no-save @excalidraw/mermaid-to-excalidraw` and enable `--enable-official-excalidraw-bridge true`.
 
+For interactive production use, the skill now prompts for a missing LLM key and can persist it into `code-explainer/.env` when the user agrees.
+
 ## GitHub Distribution
 
 Suggested install paths for other developers:
