@@ -26,6 +26,7 @@ import llm_describe
 import build_diagrams
 import validate_mermaid
 import render_diagrams
+import export_excalidraw
 import enrich_external
 import generate_docs
 import generate_html
@@ -97,6 +98,7 @@ def _write_manifest(
     verification_payload: Dict[str, Any],
     html_payload: Dict[str, Any],
     fact_check_payload: Dict[str, Any],
+    excalidraw_payload: Dict[str, Any],
     module_count: int,
     diagram_count: int,
     include_globs: List[str],
@@ -122,6 +124,9 @@ def _write_manifest(
         "llm_model": llm_payload.get("model", ""),
         "verification_fact_count": verification_payload.get("fact_count", 0),
         "fact_check_passed": fact_check_payload.get("passed", False),
+        "excalidraw_export_requested": excalidraw_payload.get("requested", False),
+        "excalidraw_export_status": excalidraw_payload.get("status", "disabled"),
+        "excalidraw_scene_count": excalidraw_payload.get("scene_count", 0),
         "html_generated": bool(html_payload.get("output_file")),
         "module_count": module_count,
         "diagram_count": diagram_count,
@@ -141,6 +146,7 @@ def run_pipeline(
     analysis_type: str,
     enable_web_enrichment: bool,
     enable_llm_descriptions: bool,
+    enable_excalidraw_export: bool,
     ask_before_llm_use: bool = False,
     prompt_for_llm_key: bool = False,
     include_globs: List[str] | None = None,
@@ -244,6 +250,12 @@ def run_pipeline(
 
         validation_payload = validate_mermaid.validate_mermaid(diagrams_dir, meta_dir)
         render_payload = render_diagrams.render_diagrams(diagrams_dir, output_root / "diagrams", theme="neutral")
+        excalidraw_payload = export_excalidraw.export_excalidraw(
+            diagrams_dir=diagrams_dir,
+            rendered_diagrams_dir=output_root / "diagrams",
+            meta_dir=meta_dir,
+            enabled=enable_excalidraw_export,
+        )
 
         docs_gen_payload = generate_docs.generate_docs(
             output_root=output_root,
@@ -312,6 +324,7 @@ def run_pipeline(
             verification_payload=verification_payload,
             html_payload=html_payload,
             fact_check_payload=fact_check_payload,
+            excalidraw_payload=excalidraw_payload,
             module_count=len(index_payload.get("modules", [])),
             diagram_count=diagram_manifest.get("count", 0),
             include_globs=include_globs,
@@ -341,6 +354,8 @@ def run_pipeline(
             "diagram_count": diagram_manifest.get("count", 0),
             "validation_ok": validation_payload.get("overall_ok", False),
             "renderer": render_payload.get("renderer", ""),
+            "excalidraw_status": excalidraw_payload.get("status", "disabled"),
+            "excalidraw_scene_count": excalidraw_payload.get("scene_count", 0),
             "html_generated": bool(html_payload.get("output_file")),
             "fact_check_passed": fact_check_payload.get("passed", False),
             "quality_passed": quality_payload.get("passed", False),
@@ -383,6 +398,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--enable-web-enrichment", default="true")
     parser.add_argument("--enable-llm-descriptions", default="true")
+    parser.add_argument("--enable-excalidraw-export", default="true")
     parser.add_argument("--ask-before-llm-use", default="false")
     parser.add_argument("--prompt-for-llm-key", default="false")
     return parser.parse_args()
@@ -397,6 +413,7 @@ def main() -> int:
     mode = common.normalize_mode(args.mode)
     web_enabled = common.bool_from_string(args.enable_web_enrichment)
     llm_enabled = common.bool_from_string(args.enable_llm_descriptions)
+    excalidraw_enabled = common.bool_from_string(args.enable_excalidraw_export)
     ask_before_llm_use = common.bool_from_string(args.ask_before_llm_use)
     prompt_for_llm_key = common.bool_from_string(args.prompt_for_llm_key)
     summary = run_pipeline(
@@ -409,6 +426,7 @@ def main() -> int:
         analysis_type=args.explainer_type,
         enable_web_enrichment=web_enabled,
         enable_llm_descriptions=llm_enabled,
+        enable_excalidraw_export=excalidraw_enabled,
         ask_before_llm_use=ask_before_llm_use,
         prompt_for_llm_key=prompt_for_llm_key,
         include_globs=args.include_glob,
@@ -433,6 +451,8 @@ def main() -> int:
         "diagram_count",
         "validation_ok",
         "renderer",
+        "excalidraw_status",
+        "excalidraw_scene_count",
         "html_generated",
         "fact_check_passed",
         "quality_passed",

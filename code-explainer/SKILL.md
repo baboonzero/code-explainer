@@ -24,9 +24,11 @@ This skill should fail quality gates if the output is generic, vague, or weakly 
 1. `overview/OVERVIEW.md` for the plain-language explanation.
 2. `deep/*.md` for architecture, modules, flows, dependencies, and glossary.
 3. `diagrams/*.mmd` plus rendered `diagrams/svg/*.svg` and `diagrams/png/*.png`.
-4. `meta/explanation_plan.json` describing the intended narrative.
-5. `meta/explanation_quality.json` scoring clarity, specificity, grounding, usefulness, diagram usefulness, and honesty.
-6. `meta/*.json` for indexing, verification, confidence, attribution, and quality reports.
+4. `diagrams/excalidraw/*.excalidraw.json` plus mirrored preview assets under `diagrams/excalidraw/svg/*.svg` and `diagrams/excalidraw/png/*.png`.
+5. `meta/explanation_plan.json` describing the intended narrative.
+6. `meta/explanation_quality.json` scoring clarity, specificity, grounding, usefulness, diagram usefulness, and honesty.
+7. `meta/excalidraw_report.json` proving whether editable Excalidraw scenes were created or why that export was blocked.
+8. `meta/*.json` for indexing, verification, confidence, attribution, and quality reports.
 
 See `references/output-contract.md` for exact artifacts and `references/evaluation-rubric.md` for the passing bar.
 
@@ -49,6 +51,7 @@ python scripts/analyze.py analyze \
   --include-glob <pattern> \
   --exclude-glob <pattern> \
   --enable-llm-descriptions <true|false> \
+  --enable-excalidraw-export <true|false> \
   --ask-before-llm-use <true|false> \
   --prompt-for-llm-key <true|false> \
   --enable-web-enrichment <true|false>
@@ -62,6 +65,7 @@ Defaults:
 - `audience=nontech`
 - `overview-length=medium`
 - `enable-llm-descriptions=true`
+- `enable-excalidraw-export=true`
 - `ask-before-llm-use=false`
 - `prompt-for-llm-key=false`
 - `enable-web-enrichment=true`
@@ -80,9 +84,10 @@ Defaults:
 3. Build `explanation_plan.json` with top modules, audience starting points, diagram purposes, and caveats.
 4. Generate the narrative layer with LLM or grounded mock/deterministic fallback.
 5. Build focused diagrams tied to onboarding questions.
-6. Generate overview and deep docs from the explanation plan plus narrative layer.
-7. Run fact-check and explanation-quality evaluation.
-8. Fail the run if quality gates do not clear the rubric.
+6. Export those diagrams into editable Excalidraw scenes when the local runtime is installed.
+7. Generate overview and deep docs from the explanation plan plus narrative layer.
+8. Run fact-check and explanation-quality evaluation.
+9. Fail the run if quality gates do not clear the rubric.
 
 ## Proof Path
 
@@ -105,6 +110,7 @@ Required:
 Recommended:
 
 - Mermaid CLI (`mmdc`) from `@mermaid-js/mermaid-cli` for higher-fidelity diagram rendering
+- `@excalidraw/mermaid-to-excalidraw` installed locally via `npm install` for editable Excalidraw scene export
 
 Install dependencies:
 
@@ -122,6 +128,8 @@ bash ./scripts/install_runtime.sh
 
 - This skill does not mutate the analyzed repository.
 - If the explanation-quality score is below the rubric threshold, treat the output as failed even if files were produced.
+- If Excalidraw export is enabled, treat missing or partial editable scene generation as a real quality issue, not a cosmetic extra.
+- When the official Excalidraw bridge is unavailable or browser-dependent in the local runtime, the skill falls back to a deterministic local scene generator for the Mermaid subset it emits and records that downgrade in `meta/excalidraw_report.json`.
 - Use include/exclude globs to narrow analysis when the repository is very large or noisy.
 
 ## References

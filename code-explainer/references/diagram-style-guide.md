@@ -6,6 +6,7 @@
 2. Every diagram must have a purpose tied to onboarding comprehension.
 3. Keep labels short and plain-language-first for non-technical readers.
 4. Split diagrams when readability is degraded by scale.
+5. Mermaid remains the canonical source; Excalidraw exports are editable derivatives of those same diagrams.
 
 ## Standard Mode Diagram Set
 
@@ -28,6 +29,7 @@
 2. Export SVG first, then PNG.
 3. Use a neutral, high-contrast theme.
 4. Prefer 16:9 or wider canvases for architecture and dependency maps.
+5. When Excalidraw export is enabled, mirror each Mermaid diagram into an editable `.excalidraw.json` scene and keep the SVG/PNG previews aligned with the same content.
 
 ## Complexity Heuristics
 
@@ -36,4 +38,3 @@ Flag for split or simplification when:
 - > 50 nodes
 - > 120 edges
 - > 220 lines in Mermaid source
-

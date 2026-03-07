@@ -6,8 +6,7 @@ From repository root:
 
 ```bash
 git add .
-git commit -m "feat: rebuild code-explainer around grounded explanation quality"
-git remote add origin https://github.com/<your-org-or-user>/code-explainer.git
+git commit -m "feat: add proof-backed Excalidraw exports"
 git push -u origin main
 ```
 
@@ -16,12 +15,14 @@ git push -u origin main
 1. The repo-level docs match the shipped skill contract.
 2. `code-explainer/SKILL.md` reflects the current pipeline and proof path.
 3. `python code-explainer/scripts/self_audit.py` passes.
-4. `install_to_codex.ps1` installs the current package cleanly.
+4. `install_to_codex.ps1` copies the current package cleanly, including `package.json` and `package-lock.json`.
+5. `meta/excalidraw_report.json` is part of the output contract and the self-audit proves editable scene generation.
 
 Recommended:
 
 ```bash
 cd code-explainer
+pwsh ./scripts/install_runtime.ps1
 python scripts/self_audit.py
 ```
 
@@ -49,11 +50,13 @@ Users need:
 - Node.js `18+` and npm
 - Git
 
-Recommended for full diagram rendering:
+Recommended for higher-fidelity diagram rendering:
 
 - Mermaid CLI (`@mermaid-js/mermaid-cli`)
 
-Even without live LLM access, the proof path still works through `CODE_EXPLAINER_MOCK_LLM=true`.
+The repo also ships a local Excalidraw bridge dependency through `package.json`.
+
+Even without live LLM access, the proof path still works through `CODE_EXPLAINER_MOCK_LLM=true`. Even if the official Excalidraw bridge is browser-dependent in the local environment, the shipped deterministic fallback scene generator keeps the editable-diagram proof path working and records the downgrade in `meta/excalidraw_report.json`.
 
 ## GitHub Distribution
 
@@ -82,11 +85,13 @@ Suggested GitHub topics:
 - `codebase-analysis`
 - `onboarding`
 - `mermaid`
+- `excalidraw`
 - `developer-tools`
 
 Useful publishing assets:
 
 1. A short README section showing `overview/OVERVIEW.md`
-2. One example diagram image
+2. One example Mermaid diagram and one example Excalidraw scene screenshot
 3. The self-audit result summary
-4. A release note that explains the rebuild from generic output to proof-backed output
+4. The latest `audit-skill` report
+5. A release note that explains the shift from generic output to proof-backed explanation plus editable diagrams

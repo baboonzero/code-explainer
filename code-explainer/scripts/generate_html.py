@@ -98,12 +98,25 @@ def _mode_context_block(analysis_type: str, context_payload: Dict[str, Any]) -> 
 def _diagram_cards(output_root: Path, diagram_manifest: Dict[str, Any]) -> str:
     cards: List[str] = []
     diagrams_dir = output_root / "diagrams"
+    excalidraw_report = common.read_json(output_root / "meta" / "excalidraw_report.json", default={})
+    excalidraw_map = {
+        item.get("diagram", ""): item
+        for item in excalidraw_report.get("results", [])
+        if item.get("diagram")
+    }
     for idx, file_name in enumerate(diagram_manifest.get("diagram_files", []), start=1):
         mmd_path = diagrams_dir / file_name
         mmd_text = common.read_text(mmd_path)
         if not mmd_text.strip():
             continue
         title = Path(file_name).stem.replace("_", " ").title()
+        links = [
+            f'<a href="../diagrams/svg/{_escape(Path(file_name).stem)}.svg">SVG</a>',
+            f'<a href="../diagrams/png/{_escape(Path(file_name).stem)}.png">PNG</a>',
+        ]
+        excalidraw_item = excalidraw_map.get(file_name, {})
+        if excalidraw_item.get("status") == "ok":
+            links.append(f'<a href="../diagrams/{_escape(excalidraw_item.get("scene", ""))}">Excalidraw</a>')
         cards.append(
             f"""
 <article class="card diagram-card">
@@ -117,8 +130,7 @@ def _diagram_cards(output_root: Path, diagram_manifest: Dict[str, Any]) -> str:
     <pre class="mermaid">{_escape(mmd_text)}</pre>
   </div>
   <p class="meta-links">
-    <a href="../diagrams/svg/{_escape(Path(file_name).stem)}.svg">SVG</a>
-    <a href="../diagrams/png/{_escape(Path(file_name).stem)}.png">PNG</a>
+    {" ".join(links)}
   </p>
 </article>
 """

@@ -44,15 +44,19 @@ def _run_fixture(base_output: Path, fixture: Dict[str, Any]) -> Dict[str, Any]:
         analysis_type="onboarding",
         enable_web_enrichment=False,
         enable_llm_descriptions=True,
+        enable_excalidraw_export=True,
     )
     quality = common.read_json(output_root / "meta" / "quality_report.json", default={})
     explanation_quality = common.read_json(output_root / "meta" / "explanation_quality.json", default={})
+    excalidraw = common.read_json(output_root / "meta" / "excalidraw_report.json", default={})
     return {
         "fixture": fixture["name"],
         "output_root": output_root.as_posix(),
         "quality_passed": summary.get("quality_passed", False),
         "diagram_count": summary.get("diagram_count", 0),
         "explanation_quality_score": explanation_quality.get("score", 0.0),
+        "excalidraw_status": excalidraw.get("status", "missing"),
+        "excalidraw_scene_count": excalidraw.get("scene_count", 0),
         "quality_errors": quality.get("errors", []),
         "quality_warnings": quality.get("warnings", []),
     }
@@ -61,7 +65,12 @@ def _run_fixture(base_output: Path, fixture: Dict[str, Any]) -> Dict[str, Any]:
 def run_self_audit(output_root: Path) -> Dict[str, Any]:
     common.ensure_dir(output_root)
     results = [_run_fixture(output_root, fixture) for fixture in FIXTURES]
-    passed = all(item["quality_passed"] for item in results) and all(item["explanation_quality_score"] >= 80.0 for item in results)
+    passed = (
+        all(item["quality_passed"] for item in results)
+        and all(item["explanation_quality_score"] >= 80.0 for item in results)
+        and all(item["excalidraw_status"] == "ok" for item in results)
+        and all(item["excalidraw_scene_count"] >= item["diagram_count"] for item in results)
+    )
     payload = {
         "generated_at": common.now_iso(),
         "passed": passed,
@@ -82,6 +91,8 @@ def run_self_audit(output_root: Path) -> Dict[str, Any]:
         lines.append(f"- Quality passed: `{item['quality_passed']}`")
         lines.append(f"- Explanation quality score: `{item['explanation_quality_score']}`")
         lines.append(f"- Diagram count: `{item['diagram_count']}`")
+        lines.append(f"- Excalidraw status: `{item['excalidraw_status']}`")
+        lines.append(f"- Excalidraw scene count: `{item['excalidraw_scene_count']}`")
         if item["quality_errors"]:
             lines.append("- Errors:")
             for err in item["quality_errors"]:

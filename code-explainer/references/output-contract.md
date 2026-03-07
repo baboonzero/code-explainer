@@ -12,29 +12,33 @@
 8. `diagrams/*.mmd`
 9. `diagrams/svg/*.svg`
 10. `diagrams/png/*.png`
-11. `meta/analysis_manifest.json`
-12. `meta/confidence_report.json`
-13. `meta/source_attribution.json`
-14. `meta/index.json`
-15. `meta/stack.json`
-16. `meta/entrypoints.json`
-17. `meta/dependencies.json`
-18. `meta/flows.json`
-19. `meta/diagram_manifest.json`
-20. `meta/mermaid_validation.json`
-21. `meta/render_report.json`
-22. `meta/enrichment.json`
-23. `meta/coverage_report.json`
-24. `meta/explainer_context.json`
-25. `meta/verification_checkpoint.json`
-26. `meta/explanation_plan.json`
-27. `meta/llm_summary.json`
-28. `meta/docs_generation.json`
-29. `meta/html_generation.json` (when `--format html|both`)
-30. `meta/fact_check_report.json`
-31. `meta/content_completeness.json`
-32. `meta/explanation_quality.json`
-33. `meta/quality_report.json`
+11. `diagrams/excalidraw/*.excalidraw.json`
+12. `diagrams/excalidraw/svg/*.svg`
+13. `diagrams/excalidraw/png/*.png`
+14. `meta/analysis_manifest.json`
+15. `meta/confidence_report.json`
+16. `meta/source_attribution.json`
+17. `meta/index.json`
+18. `meta/stack.json`
+19. `meta/entrypoints.json`
+20. `meta/dependencies.json`
+21. `meta/flows.json`
+22. `meta/diagram_manifest.json`
+23. `meta/mermaid_validation.json`
+24. `meta/render_report.json`
+25. `meta/excalidraw_report.json`
+26. `meta/enrichment.json`
+27. `meta/coverage_report.json`
+28. `meta/explainer_context.json`
+29. `meta/verification_checkpoint.json`
+30. `meta/explanation_plan.json`
+31. `meta/llm_summary.json`
+32. `meta/docs_generation.json`
+33. `meta/html_generation.json` (when `--format html|both`)
+34. `meta/fact_check_report.json`
+35. `meta/content_completeness.json`
+36. `meta/explanation_quality.json`
+37. `meta/quality_report.json`
 
 ## Manifest Schema
 
@@ -63,6 +67,9 @@
 - `llm_model`
 - `verification_fact_count`
 - `fact_check_passed`
+- `excalidraw_export_requested`
+- `excalidraw_export_status`
+- `excalidraw_scene_count`
 - `html_generated`
 
 ## Coverage Schema
@@ -167,6 +174,31 @@
 - `failures[]`
 - `generic_phrase_hits`
 - `avg_overview_sentence_length`
+
+## Excalidraw Export Schema
+
+`excalidraw_report.json` contains:
+
+- `generated_at`
+- `requested`
+- `status` (`ok|partial|failed|environment_blocked|disabled`)
+- `environment_blocked`
+- `scene_count`
+- `failed_count`
+- `warnings[]`
+- `runtime`
+- `results[]` where each result has:
+- `diagram`
+- `scene`
+- `preview_svg`
+- `preview_png`
+- `status`
+- `exporter`
+- `element_count`
+- `file_count`
+- `preview_strategy`
+- `warnings[]`
+- `errors[]`
 
 ## Confidence Schema
 

@@ -1,0 +1,9 @@
+{
+  "name": "code-explainer-runtime",
+  "private": true,
+  "type": "module",
+  "description": "Local runtime helpers for the code-explainer skill.",
+  "dependencies": {
+    "@excalidraw/mermaid-to-excalidraw": "2.0.0-rc4"
+  }
+}

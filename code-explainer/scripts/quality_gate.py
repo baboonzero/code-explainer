@@ -26,6 +26,7 @@ BASE_REQUIRED_OUTPUTS = [
     "meta/docs_generation.json",
     "meta/explanation_plan.json",
     "meta/explanation_quality.json",
+    "meta/excalidraw_report.json",
 ]
 
 
@@ -288,6 +289,19 @@ def run_quality_gate(
             warnings.append(
                 f"Diagram rendering used fallback artifacts for {len(fallback_renders)} diagram(s) because mmdc was unavailable or unhealthy."
             )
+
+    excalidraw_report = common.read_json(output_root / "meta" / "excalidraw_report.json", default={})
+    if excalidraw_report:
+        status = str(excalidraw_report.get("status", "disabled"))
+        if status == "environment_blocked":
+            for warning in excalidraw_report.get("warnings", []):
+                warnings.append(f"Excalidraw export unavailable: {warning}")
+        elif status in {"failed", "partial"}:
+            errors.append(
+                f"Excalidraw export {status} with {excalidraw_report.get('failed_count', 0)} failed diagram(s)."
+            )
+        elif status == "ok" and int(excalidraw_report.get("scene_count", 0)) == 0:
+            errors.append("Excalidraw export reported success but produced zero scene files.")
 
     confidence = common.read_json(output_root / "meta" / "confidence_report.json", default={"claims": []})
     attribution = common.read_json(output_root / "meta" / "source_attribution.json", default={"attributions": []})

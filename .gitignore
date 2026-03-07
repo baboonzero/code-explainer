@@ -4,11 +4,14 @@ __pycache__/
 
 # Skill local outputs
 .out*/
+.audit_tmp/
 code-explainer-output/
 code-explainer/.out*/
 code-explainer/.out-gh/
 code-explainer/.ci-out/
+code-explainer/.audit_tmp/
 code-explainer/code-explainer-output/
+code-explainer/node_modules/
 
 # OS/editor
 .DS_Store
