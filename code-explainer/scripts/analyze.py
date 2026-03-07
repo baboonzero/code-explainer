@@ -127,6 +127,8 @@ def _write_manifest(
         "excalidraw_export_requested": excalidraw_payload.get("requested", False),
         "excalidraw_export_status": excalidraw_payload.get("status", "disabled"),
         "excalidraw_scene_count": excalidraw_payload.get("scene_count", 0),
+        "official_excalidraw_bridge_requested": excalidraw_payload.get("official_bridge_requested", False),
+        "official_excalidraw_bridge_used": excalidraw_payload.get("official_bridge_used", 0),
         "html_generated": bool(html_payload.get("output_file")),
         "module_count": module_count,
         "diagram_count": diagram_count,
@@ -147,6 +149,7 @@ def run_pipeline(
     enable_web_enrichment: bool,
     enable_llm_descriptions: bool,
     enable_excalidraw_export: bool,
+    enable_official_excalidraw_bridge: bool = False,
     ask_before_llm_use: bool = False,
     prompt_for_llm_key: bool = False,
     include_globs: List[str] | None = None,
@@ -255,6 +258,7 @@ def run_pipeline(
             rendered_diagrams_dir=output_root / "diagrams",
             meta_dir=meta_dir,
             enabled=enable_excalidraw_export,
+            prefer_official_bridge=enable_official_excalidraw_bridge,
         )
 
         docs_gen_payload = generate_docs.generate_docs(
@@ -356,6 +360,7 @@ def run_pipeline(
             "renderer": render_payload.get("renderer", ""),
             "excalidraw_status": excalidraw_payload.get("status", "disabled"),
             "excalidraw_scene_count": excalidraw_payload.get("scene_count", 0),
+            "official_excalidraw_bridge_used": excalidraw_payload.get("official_bridge_used", 0),
             "html_generated": bool(html_payload.get("output_file")),
             "fact_check_passed": fact_check_payload.get("passed", False),
             "quality_passed": quality_payload.get("passed", False),
@@ -399,6 +404,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--enable-web-enrichment", default="true")
     parser.add_argument("--enable-llm-descriptions", default="true")
     parser.add_argument("--enable-excalidraw-export", default="true")
+    parser.add_argument("--enable-official-excalidraw-bridge", default="false")
     parser.add_argument("--ask-before-llm-use", default="false")
     parser.add_argument("--prompt-for-llm-key", default="false")
     return parser.parse_args()
@@ -414,6 +420,7 @@ def main() -> int:
     web_enabled = common.bool_from_string(args.enable_web_enrichment)
     llm_enabled = common.bool_from_string(args.enable_llm_descriptions)
     excalidraw_enabled = common.bool_from_string(args.enable_excalidraw_export)
+    official_excalidraw_bridge_enabled = common.bool_from_string(args.enable_official_excalidraw_bridge)
     ask_before_llm_use = common.bool_from_string(args.ask_before_llm_use)
     prompt_for_llm_key = common.bool_from_string(args.prompt_for_llm_key)
     summary = run_pipeline(
@@ -427,6 +434,7 @@ def main() -> int:
         enable_web_enrichment=web_enabled,
         enable_llm_descriptions=llm_enabled,
         enable_excalidraw_export=excalidraw_enabled,
+        enable_official_excalidraw_bridge=official_excalidraw_bridge_enabled,
         ask_before_llm_use=ask_before_llm_use,
         prompt_for_llm_key=prompt_for_llm_key,
         include_globs=args.include_glob,
@@ -453,6 +461,7 @@ def main() -> int:
         "renderer",
         "excalidraw_status",
         "excalidraw_scene_count",
+        "official_excalidraw_bridge_used",
         "html_generated",
         "fact_check_passed",
         "quality_passed",

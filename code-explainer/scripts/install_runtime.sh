@@ -14,16 +14,14 @@ npm --version
 echo "Checking Git..."
 git --version
 
-echo "Installing local Node runtime packages..."
-(cd "$SKILL_DIR" && npm install)
-
 echo "Installing Mermaid CLI (mmdc)..."
 npm install -g @mermaid-js/mermaid-cli
 
 echo "Validating mmdc..."
 mmdc --version
 
-echo "Validating Excalidraw export bridge..."
-(cd "$SKILL_DIR" && node "./scripts/mermaid_to_excalidraw.mjs" --help >/dev/null)
+echo "Optional: to enable the official Excalidraw bridge for development, run:"
+echo "  cd \"$SKILL_DIR\""
+echo "  npm install --no-save @excalidraw/mermaid-to-excalidraw"
 
 echo "Runtime install complete."

@@ -45,8 +45,6 @@ The older build looked polished but produced weak output. The current contract i
 ```text
 code-explainer/
   SKILL.md
-  package.json
-  package-lock.json
   agents/openai.yaml
   assets/
     fixtures/
@@ -70,10 +68,6 @@ Recommended:
 
 - Mermaid CLI (`mmdc`) from `@mermaid-js/mermaid-cli`
 
-Installed locally by the skill runtime:
-
-- `@excalidraw/mermaid-to-excalidraw`
-
 Windows:
 
 ```powershell
@@ -94,7 +88,7 @@ From this repository root:
 powershell -ExecutionPolicy Bypass -File .\install_to_codex.ps1
 ```
 
-This copies the current skill package into `~/.codex/skills/code-explainer`. Restart Codex after installation, then run the skill runtime installer inside the installed copy if you need the local Node dependencies there.
+This copies the current skill package into `~/.codex/skills/code-explainer`. Restart Codex after installation.
 
 ## Run
 
@@ -110,6 +104,7 @@ python scripts/analyze.py analyze \
   --overview-length medium \
   --enable-llm-descriptions true \
   --enable-excalidraw-export true \
+  --enable-official-excalidraw-bridge false \
   --ask-before-llm-use false \
   --prompt-for-llm-key false \
   --enable-web-enrichment false
@@ -124,13 +119,14 @@ Useful controls:
 - `--explainer-type onboarding|project-recap|plan-review|diff-review`
 - `--audience nontech|mixed|engineering`
 - `--enable-excalidraw-export true|false`
+- `--enable-official-excalidraw-bridge true|false`
 
 ## Diagram and Excalidraw Behavior
 
 - Mermaid remains the canonical source of truth.
 - The skill exports editable Excalidraw scenes from that Mermaid set.
-- If the official Excalidraw bridge works in the local runtime, it is used directly.
-- If the official bridge is browser-dependent or unavailable, the skill falls back to a deterministic local scene generator for the Mermaid subset it emits and records that downgrade in `meta/excalidraw_report.json`.
+- The deterministic local scene generator is the default production path.
+- The official Excalidraw bridge is opt-in only through `--enable-official-excalidraw-bridge true` and is intended for development experiments, not the default runtime.
 
 ## LLM Behavior
 

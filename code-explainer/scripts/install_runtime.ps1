@@ -14,20 +14,14 @@ npm --version
 Write-Host "Checking Git..."
 git --version
 
-Write-Host "Installing local Node runtime packages..."
-Push-Location $SkillDir
-npm install
-Pop-Location
-
 Write-Host "Installing Mermaid CLI (mmdc)..."
 npm install -g @mermaid-js/mermaid-cli
 
 Write-Host "Validating mmdc..."
 mmdc --version
 
-Write-Host "Validating Excalidraw export bridge..."
-Push-Location $SkillDir
-node ".\\scripts\\mermaid_to_excalidraw.mjs" --help | Out-Null
-Pop-Location
+Write-Host "Optional: to enable the official Excalidraw bridge for development, run:"
+Write-Host "  cd `"$SkillDir`""
+Write-Host "  npm install --no-save @excalidraw/mermaid-to-excalidraw"
 
 Write-Host "Runtime install complete."

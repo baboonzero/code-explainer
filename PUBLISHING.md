@@ -15,7 +15,7 @@ git push -u origin main
 1. The repo-level docs match the shipped skill contract.
 2. `code-explainer/SKILL.md` reflects the current pipeline and proof path.
 3. `python code-explainer/scripts/self_audit.py` passes.
-4. `install_to_codex.ps1` copies the current package cleanly, including `package.json` and `package-lock.json`.
+4. `install_to_codex.ps1` copies the current package cleanly.
 5. `meta/excalidraw_report.json` is part of the output contract and the self-audit proves editable scene generation.
 
 Recommended:
@@ -54,9 +54,7 @@ Recommended for higher-fidelity diagram rendering:
 
 - Mermaid CLI (`@mermaid-js/mermaid-cli`)
 
-The repo also ships a local Excalidraw bridge dependency through `package.json`.
-
-Even without live LLM access, the proof path still works through `CODE_EXPLAINER_MOCK_LLM=true`. Even if the official Excalidraw bridge is browser-dependent in the local environment, the shipped deterministic fallback scene generator keeps the editable-diagram proof path working and records the downgrade in `meta/excalidraw_report.json`.
+Even without live LLM access, the proof path still works through `CODE_EXPLAINER_MOCK_LLM=true`. The deterministic Excalidraw scene generator is now the default production path, so the repo does not need to ship the official bridge dependency in its default install surface. If a developer wants to experiment with the official bridge anyway, they can install it locally with `npm install --no-save @excalidraw/mermaid-to-excalidraw` and enable `--enable-official-excalidraw-bridge true`.
 
 ## GitHub Distribution
 

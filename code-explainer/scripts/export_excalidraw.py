@@ -31,17 +31,14 @@ def _runtime_status() -> Dict[str, Any]:
     node = common.which("node")
     bridge = SCRIPT_DIR / "mermaid_to_excalidraw.mjs"
     package_dir = SKILL_DIR / "node_modules" / "@excalidraw" / "mermaid-to-excalidraw"
-    package_json = SKILL_DIR / "package.json"
 
     issues: List[str] = []
     if not node:
         issues.append("Node.js was not found on PATH.")
     if not bridge.exists():
         issues.append("The Mermaid-to-Excalidraw bridge script is missing.")
-    if not package_json.exists():
-        issues.append("package.json is missing from the skill runtime.")
     if not package_dir.exists():
-        issues.append("The @excalidraw/mermaid-to-excalidraw package is not installed.")
+        issues.append("The @excalidraw/mermaid-to-excalidraw package is not installed in this skill directory.")
 
     return {
         "ok": len(issues) == 0,
@@ -352,6 +349,7 @@ def export_excalidraw(
     rendered_diagrams_dir: Path,
     meta_dir: Path,
     enabled: bool = True,
+    prefer_official_bridge: bool = False,
 ) -> Dict[str, Any]:
     scene_dir = common.ensure_dir(rendered_diagrams_dir / "excalidraw")
     svg_dir = common.ensure_dir(scene_dir / "svg")
@@ -366,16 +364,29 @@ def export_excalidraw(
             "environment_blocked": False,
             "scene_count": 0,
             "failed_count": 0,
+            "official_bridge_requested": False,
+            "official_bridge_used": 0,
             "results": [],
             "warnings": ["Excalidraw export disabled by caller."],
         }
         common.write_json(report_path, payload)
         return payload
 
-    runtime = _runtime_status()
+    runtime = (
+        _runtime_status()
+        if prefer_official_bridge
+        else {
+            "ok": False,
+            "node": "",
+            "bridge": (SCRIPT_DIR / "mermaid_to_excalidraw.mjs").as_posix(),
+            "package_dir": (SKILL_DIR / "node_modules" / "@excalidraw" / "mermaid-to-excalidraw").as_posix(),
+            "issues": [],
+        }
+    )
     results: List[Dict[str, Any]] = []
     scene_count = 0
     failed_count = 0
+    bridge_used_count = 0
     renderer_svg_dir = rendered_diagrams_dir / "svg"
     renderer_png_dir = rendered_diagrams_dir / "png"
 
@@ -401,7 +412,7 @@ def export_excalidraw(
         }
 
         bridge_error = ""
-        if runtime["ok"]:
+        if prefer_official_bridge and runtime["ok"]:
             code, stdout, stderr = common.run_cmd(
                 [
                     runtime["node"],
@@ -420,6 +431,7 @@ def export_excalidraw(
                 payload = common.read_json(scene_path, default={})
                 entry["status"] = "ok"
                 entry["exporter"] = "official-bridge"
+                bridge_used_count += 1
                 entry["element_count"] = len(payload.get("elements", []))
                 entry["file_count"] = len(payload.get("files", {}))
                 if stdout.strip():
@@ -443,7 +455,7 @@ def export_excalidraw(
                 entry["file_count"] = len(fallback.get("files", {}))
                 if bridge_error:
                     entry["warnings"].append(bridge_error)
-                if not runtime["ok"]:
+                if prefer_official_bridge and not runtime["ok"]:
                     entry["warnings"].extend(runtime["issues"])
             except Exception as exc:
                 failed_count += 1
@@ -468,7 +480,7 @@ def export_excalidraw(
         status = "partial" if scene_count > 0 else "failed"
 
     warnings: List[str] = []
-    if not runtime["ok"]:
+    if prefer_official_bridge and not runtime["ok"]:
         warnings.append("Official Excalidraw bridge runtime unavailable; used the local deterministic scene generator.")
         warnings.extend(runtime["issues"])
 
@@ -479,6 +491,8 @@ def export_excalidraw(
         "environment_blocked": False,
         "scene_count": scene_count,
         "failed_count": failed_count,
+        "official_bridge_requested": prefer_official_bridge,
+        "official_bridge_used": bridge_used_count,
         "results": results,
         "warnings": warnings,
         "runtime": runtime,
@@ -493,6 +507,7 @@ def main() -> int:
     parser.add_argument("--rendered-diagrams-dir", required=True)
     parser.add_argument("--meta-dir", required=True)
     parser.add_argument("--enabled", default="true")
+    parser.add_argument("--prefer-official-bridge", default="false")
     args = parser.parse_args()
 
     payload = export_excalidraw(
@@ -500,6 +515,7 @@ def main() -> int:
         rendered_diagrams_dir=Path(args.rendered_diagrams_dir).resolve(),
         meta_dir=Path(args.meta_dir).resolve(),
         enabled=common.bool_from_string(args.enabled),
+        prefer_official_bridge=common.bool_from_string(args.prefer_official_bridge),
     )
     print(
         json.dumps(

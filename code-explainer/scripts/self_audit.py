@@ -45,6 +45,7 @@ def _run_fixture(base_output: Path, fixture: Dict[str, Any]) -> Dict[str, Any]:
         enable_web_enrichment=False,
         enable_llm_descriptions=True,
         enable_excalidraw_export=True,
+        enable_official_excalidraw_bridge=False,
     )
     quality = common.read_json(output_root / "meta" / "quality_report.json", default={})
     explanation_quality = common.read_json(output_root / "meta" / "explanation_quality.json", default={})

@@ -27,5 +27,4 @@ Copy-Item -Path (Join-Path $src "references") -Destination $dst -Recurse -Force
 Copy-Item -Path (Join-Path $src "assets") -Destination $dst -Recurse -Force
 
 Write-Host "Installed code-explainer to $dst"
-Write-Host "Run npm install inside the installed skill folder if local Node dependencies are not present."
 Write-Host "Restart Codex to pick up the new skill."

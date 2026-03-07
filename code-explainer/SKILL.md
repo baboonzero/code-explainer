@@ -52,6 +52,7 @@ python scripts/analyze.py analyze \
   --exclude-glob <pattern> \
   --enable-llm-descriptions <true|false> \
   --enable-excalidraw-export <true|false> \
+  --enable-official-excalidraw-bridge <true|false> \
   --ask-before-llm-use <true|false> \
   --prompt-for-llm-key <true|false> \
   --enable-web-enrichment <true|false>
@@ -66,6 +67,7 @@ Defaults:
 - `overview-length=medium`
 - `enable-llm-descriptions=true`
 - `enable-excalidraw-export=true`
+- `enable-official-excalidraw-bridge=false`
 - `ask-before-llm-use=false`
 - `prompt-for-llm-key=false`
 - `enable-web-enrichment=true`
@@ -84,10 +86,11 @@ Defaults:
 3. Build `explanation_plan.json` with top modules, audience starting points, diagram purposes, and caveats.
 4. Generate the narrative layer with LLM or grounded mock/deterministic fallback.
 5. Build focused diagrams tied to onboarding questions.
-6. Export those diagrams into editable Excalidraw scenes when the local runtime is installed.
-7. Generate overview and deep docs from the explanation plan plus narrative layer.
-8. Run fact-check and explanation-quality evaluation.
-9. Fail the run if quality gates do not clear the rubric.
+6. Export those diagrams into editable Excalidraw scenes through the deterministic local exporter.
+7. Optionally prefer the official Excalidraw bridge only when explicitly enabled for development experiments.
+8. Generate overview and deep docs from the explanation plan plus narrative layer.
+9. Run fact-check and explanation-quality evaluation.
+10. Fail the run if quality gates do not clear the rubric.
 
 ## Proof Path
 
@@ -110,7 +113,7 @@ Required:
 Recommended:
 
 - Mermaid CLI (`mmdc`) from `@mermaid-js/mermaid-cli` for higher-fidelity diagram rendering
-- `@excalidraw/mermaid-to-excalidraw` installed locally via `npm install` for editable Excalidraw scene export
+- Node.js is only required for GitHub cloning and optional development-time Excalidraw bridge experiments
 
 Install dependencies:
 
@@ -129,7 +132,8 @@ bash ./scripts/install_runtime.sh
 - This skill does not mutate the analyzed repository.
 - If the explanation-quality score is below the rubric threshold, treat the output as failed even if files were produced.
 - If Excalidraw export is enabled, treat missing or partial editable scene generation as a real quality issue, not a cosmetic extra.
-- When the official Excalidraw bridge is unavailable or browser-dependent in the local runtime, the skill falls back to a deterministic local scene generator for the Mermaid subset it emits and records that downgrade in `meta/excalidraw_report.json`.
+- The deterministic local Excalidraw exporter is the canonical production path.
+- The official `@excalidraw/mermaid-to-excalidraw` bridge is opt-in only via `--enable-official-excalidraw-bridge true` and should be treated as a development experiment, not a required runtime dependency.
 - Use include/exclude globs to narrow analysis when the repository is very large or noisy.
 
 ## References

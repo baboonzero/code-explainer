@@ -70,6 +70,8 @@
 - `excalidraw_export_requested`
 - `excalidraw_export_status`
 - `excalidraw_scene_count`
+- `official_excalidraw_bridge_requested`
+- `official_excalidraw_bridge_used`
 - `html_generated`
 
 ## Coverage Schema
@@ -185,6 +187,8 @@
 - `environment_blocked`
 - `scene_count`
 - `failed_count`
+- `official_bridge_requested`
+- `official_bridge_used`
 - `warnings[]`
 - `runtime`
 - `results[]` where each result has:

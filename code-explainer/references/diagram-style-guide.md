@@ -7,6 +7,7 @@
 3. Keep labels short and plain-language-first for non-technical readers.
 4. Split diagrams when readability is degraded by scale.
 5. Mermaid remains the canonical source; Excalidraw exports are editable derivatives of those same diagrams.
+6. The deterministic local Excalidraw exporter is the default production path; the official bridge is optional and development-only.
 
 ## Standard Mode Diagram Set
 
